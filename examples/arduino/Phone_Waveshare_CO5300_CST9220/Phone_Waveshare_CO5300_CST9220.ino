@@ -1,8 +1,8 @@
 /**
  *
- * # ESP-Brookesia Phone Example
+ * # ESP-Brookesia Phone Example for Waveshare ESP32-S3 Touch AMOLED 2.16
  *
- * The example demonstrates how to use the `esp-brookesia` and `ESP32_Display_Panel` libraries to display phone UI on the screen.
+ * The example demonstrates how to use `esp-brookesia` directly with the Waveshare CO5300 AMOLED display and CST9220 touch controller.
  *
  * The example is suitable for touchscreens with a resolution of `240 x 240` or higher. Otherwise, the functionality may not work properly. The default style ensures compatibility across resolutions, but the display effect may not be optimal on many resolutions. It is recommended to use a UI stylesheet with the same resolution as the screen. If no suitable stylesheet is available, it needs to be adjusted manually.
  *
@@ -10,8 +10,8 @@
  *
  * To use this example, please firstly install the following dependent libraries:
  *
- * - ESP32_Display_Panel
- * - ESP32_IO_Expander (0.1.*)
+ * - GFX Library for Arduino
+ * - SensorLib
  * - lvgl (>= v9.0, < v10)
  *
  * Then, follow the steps below to configure the libraries and upload the example:
@@ -20,20 +20,14 @@
  *
  *     - [optional] Follow the [steps](https://github.com/espressif/esp-brookesia/blob/master/docs/how_to_use.md#configuration-instructions-1) to configure the library.
  *
- * 2. For **ESP32_Display_Panel**:
+ * 2. For **lvgl**:
  *
- *     - [optional] Follow the [steps](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#configuring-drivers) to configure drivers if needed.
- *     - [mandatory] If using a supported development board, follow the [steps](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#using-supported-development-boards) to configure it.
- *     - [mandatory] If using a custom board, follow the [steps](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#using-custom-development-boards) to configure it.
- *
- * 3. For **lvgl**:
- *
- *     - [mandatory] Follow the [steps](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#configuring-lvgl) to add *lv_conf.h* file and change the configurations.
  *     - [mandatory] Enable the `LV_USE_SNAPSHOT` macro in the *lv_conf.h* file.
- *     - [optional] Modify the macros in the [lvgl_port_v9.h](./lvgl_port_v9.h) file to configure the lvgl porting parameters.
+ *     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
  *
- * 4. Navigate to the `Tools` menu in the Arduino IDE to choose a ESP board and configure its parameters. **Please ensure that the size of APP partition in the partition table is enough (e.g. 4 MB)**. For supported boards, please refter to [Configuring Supported Development Boards](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#configuring-supported-development-boards)
- * 5. Verify and upload the example to the ESP board.
+ * 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and select `Partition Scheme: Custom`.
+ *    This sketch includes a `partitions.csv` with a large factory app slot.
+ * 4. Verify and upload the example to the ESP board.
  *
  * ## Technical Support and Feedback
  *
@@ -47,31 +41,30 @@
  */
 
 #include <Arduino.h>
-#include <ESP_Panel_Library.h>
 #include <esp_brookesia.hpp>
 #include <lvgl.h>
-#include "lvgl_port_v9.h"
+#include "lvgl_port_waveshare.h"
 #include "private/esp_brookesia_utils.h"
 
 /* Enable to show memory information */
 #define EXAMPLE_SHOW_MEM_INFO           (1)
 
 /* Try using a stylesheet that corresponds to the resolution */
-#if (ESP_PANEL_LCD_WIDTH == 320) && (ESP_PANEL_LCD_HEIGHT == 240)
+#if (WAVESHARE_LCD_WIDTH == 320) && (WAVESHARE_LCD_HEIGHT == 240)
   #define EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET()   ESP_BROOKESIA_PHONE_320_240_DARK_STYLESHEET()
-#elif (ESP_PANEL_LCD_WIDTH == 320) && (ESP_PANEL_LCD_HEIGHT == 480)
+#elif (WAVESHARE_LCD_WIDTH == 320) && (WAVESHARE_LCD_HEIGHT == 480)
   #define EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET()   ESP_BROOKESIA_PHONE_320_480_DARK_STYLESHEET()
-#elif (ESP_PANEL_LCD_WIDTH == 480) && (ESP_PANEL_LCD_HEIGHT == 480)
+#elif (WAVESHARE_LCD_WIDTH == 480) && (WAVESHARE_LCD_HEIGHT == 480)
   #define EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET()   ESP_BROOKESIA_PHONE_480_480_DARK_STYLESHEET()
-#elif (ESP_PANEL_LCD_WIDTH == 720) && (ESP_PANEL_LCD_HEIGHT == 1280)
+#elif (WAVESHARE_LCD_WIDTH == 720) && (WAVESHARE_LCD_HEIGHT == 1280)
   #define EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET()   ESP_BROOKESIA_PHONE_720_1280_DARK_STYLESHEET()
-#elif (ESP_PANEL_LCD_WIDTH == 800) && (ESP_PANEL_LCD_HEIGHT == 480)
+#elif (WAVESHARE_LCD_WIDTH == 800) && (WAVESHARE_LCD_HEIGHT == 480)
   #define EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET()   ESP_BROOKESIA_PHONE_800_480_DARK_STYLESHEET()
-#elif (ESP_PANEL_LCD_WIDTH == 800) && (ESP_PANEL_LCD_HEIGHT == 1280)
+#elif (WAVESHARE_LCD_WIDTH == 800) && (WAVESHARE_LCD_HEIGHT == 1280)
   #define EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET()   ESP_BROOKESIA_PHONE_800_1280_DARK_STYLESHEET()
-#elif (ESP_PANEL_LCD_WIDTH == 1024) && (ESP_PANEL_LCD_HEIGHT == 600)
+#elif (WAVESHARE_LCD_WIDTH == 1024) && (WAVESHARE_LCD_HEIGHT == 600)
   #define EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET()   ESP_BROOKESIA_PHONE_1024_600_DARK_STYLESHEET()
-#elif (ESP_PANEL_LCD_WIDTH == 1280) && (ESP_PANEL_LCD_HEIGHT == 800)
+#elif (WAVESHARE_LCD_WIDTH == 1280) && (WAVESHARE_LCD_HEIGHT == 800)
   #define EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET()   ESP_BROOKESIA_PHONE_1280_800_DARK_STYLESHEET()
 #endif
 
@@ -86,24 +79,13 @@ static void onClockUpdateTimerCallback(struct _lv_timer_t *t);
 
 void setup()
 {
-    String title = "ESP-Brookesia Phone example";
+    String title = "ESP-Brookesia Waveshare CO5300/CST9220 Phone example";
 
     Serial.begin(115200);
     Serial.println(title + " start");
 
-    Serial.println("Initialize panel device");
-    ESP_Panel *panel = new ESP_Panel();
-    panel->init();
-#if LVGL_PORT_AVOID_TEAR
-    // When avoid tearing function is enabled, configure the RGB bus according to the LVGL configuration
-    ESP_PanelBus_RGB *rgb_bus = static_cast<ESP_PanelBus_RGB *>(panel->getLcd()->getBus());
-    rgb_bus->configRgbFrameBufferNumber(LVGL_PORT_DISP_BUFFER_NUM);
-    rgb_bus->configRgbBounceBufferSize(LVGL_PORT_RGB_BOUNCE_BUFFER_SIZE);
-#endif
-    panel->begin();
-
-    Serial.println("Initialize lvgl");
-    ESP_BROOKESIA_CHECK_FALSE_EXIT(lvgl_port_init(panel->getLcd(), panel->getTouch()), "Initialize LVGL port failed");
+    Serial.println("Initialize Waveshare CO5300/CST9220 LVGL port");
+    ESP_BROOKESIA_CHECK_FALSE_EXIT(lvgl_port_waveshare_init(), "Initialize Waveshare LVGL port failed");
 
     Serial.println("Create and begin phone");
     /**

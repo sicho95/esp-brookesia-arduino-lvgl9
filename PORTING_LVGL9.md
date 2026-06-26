@@ -8,6 +8,9 @@ This fork starts from ESP-Brookesia `0.4.2`, because that release still ships as
 - Preserved Arduino library metadata in `library.properties`.
 - Ported the Arduino `examples/arduino/Phone` sketch to a minimal LVGL 9 display/input port.
 - The Arduino `Phone` example compiles with Arduino ESP32 core `3.3.8`, LVGL `9.5.0`, and `PartitionScheme=huge_app`.
+- Added `examples/arduino/Phone_Waveshare_CO5300_CST9220`, a hardware-specific Arduino example for the Waveshare ESP32-S3 Touch AMOLED 2.16 using Arduino_GFX for CO5300 and SensorLib for CST9220.
+- The Waveshare example compiles with Arduino ESP32 core `3.3.8`, LVGL `9.5.0`, GFX Library for Arduino `1.6.5`, SensorLib `0.4.1`, and `PartitionScheme=custom`.
+- The Waveshare example includes its own `partitions.csv`; the full Phone demo plus Arduino_GFX and SensorLib exceeds Arduino-ESP32's 3 MB `huge_app` slot.
 - Runtime validation on real hardware is still pending.
 
 ## Constraints
@@ -38,9 +41,9 @@ This fork starts from ESP-Brookesia `0.4.2`, because that release still ships as
 
 1. Compile the library headers and core sources with LVGL 9. Done.
 2. Compile the Arduino `Phone` example with LVGL 9. Done.
-3. Run a minimal ESP32-S3 display/touch example.
+3. Compile a Waveshare ESP32-S3 Touch AMOLED 2.16 display/touch example. Done.
 4. Validate app launch, close, recents, status bar and navigation gestures.
-5. Add a Waveshare ESP32-S3 Touch AMOLED 2.16 example if the generic Phone example is stable.
+5. Tune runtime stability, memory pressure and touch/display rotation on real hardware.
 
 ## Non-Goals
 

@@ -8,7 +8,7 @@ Goal:
 - port the codebase from LVGL 8 APIs to LVGL 9
 - keep ESP32 / ESP32-S3 Arduino users able to build a Phone-style UI with launcher, status bar, navigation and app isolation
 
-Status: work in progress. The initial import was ESP-Brookesia `0.4.2`; the current source tree is backported from ESP-Brookesia `0.5.0` to get LVGL 9 APIs while keeping Arduino metadata and examples. The Arduino `Phone` example compiles with Arduino ESP32 core `3.3.8`, LVGL `9.5.0`, and a `huge_app` partition. Runtime validation is still pending and is tracked in [PORTING_LVGL9.md](./PORTING_LVGL9.md).
+Status: work in progress. The initial import was ESP-Brookesia `0.4.2`; the current source tree is backported from ESP-Brookesia `0.5.0` to get LVGL 9 APIs while keeping Arduino metadata and examples. The Arduino `Phone` example compiles with Arduino ESP32 core `3.3.8`, LVGL `9.5.0`, and a `huge_app` partition. A hardware-specific `Phone_Waveshare_CO5300_CST9220` example is also available for the Waveshare ESP32-S3 Touch AMOLED 2.16; it uses a local custom partition table because the full demo exceeds the 3 MB `huge_app` slot when Arduino_GFX and SensorLib are linked. Runtime validation is still pending and is tracked in [PORTING_LVGL9.md](./PORTING_LVGL9.md).
 
 Upstream references:
 
