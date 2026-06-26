@@ -303,7 +303,7 @@ static lv_display_t *display_init()
     }
 
     lv_display_set_flush_cb(display, flush_callback);
-    lv_display_set_buffers(display, lvgl_buf[0], lvgl_buf[1], BUFFER_BYTES, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(display, lvgl_buf[0], lvgl_buf[1], BUFFER_BYTES, LV_DISPLAY_RENDER_MODE_FULL);
     return display;
 }
 

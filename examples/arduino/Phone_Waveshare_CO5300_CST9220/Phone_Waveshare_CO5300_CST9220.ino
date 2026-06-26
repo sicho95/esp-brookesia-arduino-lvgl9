@@ -109,7 +109,7 @@ void setup()
 
     stylesheet->core.manager.flags.enable_app_save_snapshot = 0;
     stylesheet->home.recents_screen.data.flags.enable_table_snapshot_use_icon_image = 1;
-    stylesheet->manager.flags.enable_recents_screen_snapshot_drag = 0;
+    stylesheet->manager.flags.enable_recents_screen_snapshot_drag = 1;
     stylesheet->manager.flags.enable_recents_screen_hide_when_no_snapshot = 0;
 
     Serial.printf("Using stylesheet (%s)\n", stylesheet->core.name);

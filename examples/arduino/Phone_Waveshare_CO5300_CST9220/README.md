@@ -22,6 +22,7 @@ Then, follow the steps below to configure the libraries and upload the example:
 
     - This sketch includes a local *lv_conf.h* with the fonts used by the bundled Brookesia demo apps.
     - Brookesia app snapshots are disabled in the Waveshare stylesheet at runtime. A 480 x 480 snapshot can fail allocation on this Arduino target, so recents use app icons instead.
+    - The LVGL display port uses full-screen render buffers when software rotation is enabled. This avoids partial-refresh artifacts on animated Squareline screens.
     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
 
 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and configure its parameters:
@@ -35,6 +36,8 @@ Then, follow the steps below to configure the libraries and upload the example:
 4. Verify and upload the example to the ESP board.
 
 Do not copy the library `src` directory into this sketch folder. Install or link the whole `esp-brookesia-arduino-lvgl9` repository as an Arduino library under `Documents/Arduino/libraries`; otherwise Arduino may compile two copies of Brookesia and fail with class redefinition errors.
+
+Apps remain paused in the background when returning home. Open recents and drag an app card upward to close it.
 
 ## Technical Support and Feedback
 
