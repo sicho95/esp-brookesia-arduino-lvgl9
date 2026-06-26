@@ -1,5 +1,24 @@
 # ChangeLog
 
+## v0.5.0 - 2025-05-30
+
+### Breaking Changes:
+
+* feat(dependencies): upgrade LVGL dependency to v9.2
+* feat(dependencies): upgrade IDF dependency to v5.3 and above
+* feat(repo): remove Arduino support
+* feat(docs): update library architecture diagram
+
+## v0.4.3 - 2025-01-20
+
+### Enhancements:
+
+* feat(pre-commit): check lib versions
+
+### Bugfixes:
+
+* fix(status_bar): display 1-12 with AM/PM indicator @rysmith0315 (#19)
+
 ## v0.4.2 - 2024-12-11
 
 ### Enhancements:

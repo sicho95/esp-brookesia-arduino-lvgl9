@@ -10,9 +10,9 @@
  *
  * To use this example, please firstly install the following dependent libraries:
  *
- * - ESP32_Display_Panel (0.2.*)
+ * - ESP32_Display_Panel
  * - ESP32_IO_Expander (0.1.*)
- * - lvgl (>= v8.3.9, < v9)
+ * - lvgl (>= v9.0, < v10)
  *
  * Then, follow the steps below to configure the libraries and upload the example:
  *
@@ -30,7 +30,7 @@
  *
  *     - [mandatory] Follow the [steps](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#configuring-lvgl) to add *lv_conf.h* file and change the configurations.
  *     - [mandatory] Enable the `LV_USE_SNAPSHOT` macro in the *lv_conf.h* file.
- *     - [optional] Modify the macros in the [lvgl_port_v8.h](./lvgl_port_v8.h) file to configure the lvgl porting parameters.
+ *     - [optional] Modify the macros in the [lvgl_port_v9.h](./lvgl_port_v9.h) file to configure the lvgl porting parameters.
  *
  * 4. Navigate to the `Tools` menu in the Arduino IDE to choose a ESP board and configure its parameters. **Please ensure that the size of APP partition in the partition table is enough (e.g. 4 MB)**. For supported boards, please refter to [Configuring Supported Development Boards](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#configuring-supported-development-boards)
  * 5. Verify and upload the example to the ESP board.
@@ -50,11 +50,8 @@
 #include <ESP_Panel_Library.h>
 #include <esp_brookesia.hpp>
 #include <lvgl.h>
-#include "lvgl_port_v8.h"
-/* These are built-in app examples in `esp-brookesia` library */
-#include <app_examples/phone/simple_conf/src/phone_app_simple_conf.hpp>
-#include <app_examples/phone/complex_conf/src/phone_app_complex_conf.hpp>
-#include <app_examples/phone/squareline/src/phone_app_squareline.hpp>
+#include "lvgl_port_v9.h"
+#include "private/esp_brookesia_utils.h"
 
 /* Enable to show memory information */
 #define EXAMPLE_SHOW_MEM_INFO           (1)
@@ -106,7 +103,7 @@ void setup()
     panel->begin();
 
     Serial.println("Initialize lvgl");
-    lvgl_port_init(panel->getLcd(), panel->getTouch());
+    ESP_BROOKESIA_CHECK_FALSE_EXIT(lvgl_port_init(panel->getLcd(), panel->getTouch()), "Initialize LVGL port failed");
 
     Serial.println("Create and begin phone");
     /**
@@ -116,7 +113,7 @@ void setup()
     lvgl_port_lock(-1);
 
     /* Create a phone object */
-    phone = new ESP_Brookesia_Phone();
+    phone = new ESP_Brookesia_Phone(lvgl_port_get_display());
     ESP_BROOKESIA_CHECK_NULL_EXIT(phone, "Create phone failed");
 
 #ifdef EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET
@@ -131,8 +128,9 @@ void setup()
 #endif
 
     /* Configure and begin the phone */
-    phone->registerLvLockCallback((ESP_Brookesia_LvLockCallback_t)(lvgl_port_lock), -1);
-    phone->registerLvUnlockCallback((ESP_Brookesia_LvUnlockCallback_t)(lvgl_port_unlock));
+    ESP_BROOKESIA_CHECK_FALSE_EXIT(phone->setTouchDevice(lvgl_port_get_touch()), "Set touch device failed");
+    phone->registerLvLockCallback((ESP_Brookesia_GUI_LockCallback_t)(lvgl_port_lock), -1);
+    phone->registerLvUnlockCallback((ESP_Brookesia_GUI_UnlockCallback_t)(lvgl_port_unlock));
     ESP_BROOKESIA_CHECK_FALSE_EXIT(phone->begin(), "Begin phone failed");
     // ESP_BROOKESIA_CHECK_FALSE_EXIT(phone->getCoreHome().showContainerBorder(), "Show container border failed");
 
@@ -143,7 +141,7 @@ void setup()
     PhoneAppComplexConf *app_complex_conf = new PhoneAppComplexConf();
     ESP_BROOKESIA_CHECK_NULL_EXIT(app_complex_conf, "Create app complex conf failed");
     ESP_BROOKESIA_CHECK_FALSE_EXIT((phone->installApp(app_complex_conf) >= 0), "Install app complex conf failed");
-    PhoneAppSquareline *app_squareline = new PhoneAppSquareline();
+    PhoneAppSquareline *app_squareline = PhoneAppSquareline::getInstance();
     ESP_BROOKESIA_CHECK_NULL_EXIT(app_squareline, "Create app squareline failed");
     ESP_BROOKESIA_CHECK_FALSE_EXIT((phone->installApp(app_squareline) >= 0), "Install app squareline failed");
 
@@ -191,17 +189,15 @@ static void onClockUpdateTimerCallback(struct _lv_timer_t *t)
 {
     time_t now;
     struct tm timeinfo;
-    bool is_time_pm = false;
     ESP_Brookesia_Phone *phone = (ESP_Brookesia_Phone *)t->user_data;
 
     time(&now);
     localtime_r(&now, &timeinfo);
-    is_time_pm = (timeinfo.tm_hour >= 12);
 
     /* Since this callback is called from LVGL task, it is safe to operate LVGL */
     // Update clock on "Status Bar"
     ESP_BROOKESIA_CHECK_FALSE_EXIT(
-        phone->getHome().getStatusBar()->setClock(timeinfo.tm_hour, timeinfo.tm_min, is_time_pm),
+        phone->getHome().getStatusBar()->setClock(timeinfo.tm_hour, timeinfo.tm_min),
         "Refresh status bar failed"
     );
 }

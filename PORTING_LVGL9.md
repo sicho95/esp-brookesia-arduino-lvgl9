@@ -1,6 +1,14 @@
 # LVGL 9 Porting Plan
 
-This fork starts from ESP-Brookesia `0.4.2`, because that release still ships as an Arduino library. The port should borrow LVGL 9-compatible changes from ESP-Brookesia `0.5.0` while preserving Arduino IDE packaging.
+This fork starts from ESP-Brookesia `0.4.2`, because that release still ships as an Arduino library. The port borrows LVGL 9-compatible changes from ESP-Brookesia `0.5.0` while preserving Arduino IDE packaging.
+
+## Current State
+
+- Imported ESP-Brookesia `0.5.0` `src/`, `docs/`, `test_apps/`, `tools/` and ESP-IDF examples.
+- Preserved Arduino library metadata in `library.properties`.
+- Ported the Arduino `examples/arduino/Phone` sketch to a minimal LVGL 9 display/input port.
+- The Arduino `Phone` example compiles with Arduino ESP32 core `3.3.8`, LVGL `9.5.0`, and `PartitionScheme=huge_app`.
+- Runtime validation on real hardware is still pending.
 
 ## Constraints
 
@@ -28,8 +36,8 @@ This fork starts from ESP-Brookesia `0.4.2`, because that release still ships as
 
 ## Milestones
 
-1. Compile the library headers and core sources with LVGL 9.
-2. Compile the Arduino `Phone` example with LVGL 9.
+1. Compile the library headers and core sources with LVGL 9. Done.
+2. Compile the Arduino `Phone` example with LVGL 9. Done.
 3. Run a minimal ESP32-S3 display/touch example.
 4. Validate app launch, close, recents, status bar and navigation gestures.
 5. Add a Waveshare ESP32-S3 Touch AMOLED 2.16 example if the generic Phone example is stable.
@@ -38,4 +46,4 @@ This fork starts from ESP-Brookesia `0.4.2`, because that release still ships as
 
 - Do not migrate this fork to ESP-IDF-only packaging.
 - Do not remove the original Arduino examples.
-- Do not claim compatibility until at least one Arduino LVGL 9 example compiles.
+- Do not claim runtime compatibility until at least one Arduino LVGL 9 example runs on real hardware.

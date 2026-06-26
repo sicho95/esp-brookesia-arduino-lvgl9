@@ -8,9 +8,10 @@ The example is suitable for touchscreens with a resolution of `240 x 240` or hig
 
 To use this example, please firstly install the following dependent libraries:
 
-- ESP32_Display_Panel (0.2.*)
-- ESP32_IO_Expander (0.1.*)
-- lvgl (>= v8.3.9, < v9)
+- ESP32_Display_Panel
+- ESP32_IO_Expander
+- esp-lib-utils
+- lvgl (>= v9.0, < v10)
 
 Then, follow the steps below to configure the libraries and upload the example:
 
@@ -28,9 +29,9 @@ Then, follow the steps below to configure the libraries and upload the example:
 
     - [mandatory] Follow the [steps](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#configuring-lvgl) to add *lv_conf.h* file and change the configurations.
     - [mandatory] Enable the `LV_USE_SNAPSHOT` macro in the *lv_conf.h* file.
-    - [optional] Modify the macros in the [lvgl_port_v8.h](./lvgl_port_v8.h) file to configure the lvgl porting parameters.
+    - [optional] Modify the macros in the [lvgl_port_v9.h](./lvgl_port_v9.h) file to configure the lvgl porting parameters.
 
-4. Navigate to the `Tools` menu in the Arduino IDE to choose a ESP board and configure its parameters. **Please ensure that the size of APP partition in the partition table is enough (e.g. 4 MB)**. For supported boards, please refter to [Configuring Supported Development Boards](https://github.com/esp-arduino-libs/ESP32_Display_Panel/blob/master/docs/How_To_Use.md#configuring-supported-development-boards)
+4. Navigate to the `Tools` menu in the Arduino IDE to choose an ESP board and configure its parameters. Use a large app partition, such as `huge_app`, because the Phone example with assets is larger than the default app partition.
 5. Verify and upload the example to the ESP board.
 
 ## Technical Support and Feedback
