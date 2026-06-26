@@ -25,7 +25,10 @@
  *     - [mandatory] Enable the `LV_USE_SNAPSHOT` macro in the *lv_conf.h* file.
  *     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
  *
- * 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and select `Partition Scheme: Custom`.
+ * 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and select:
+ *    - `Flash Size`: `16MB`
+ *    - `Partition Scheme`: `Custom`
+ *    - `PSRAM`: `OPI PSRAM`
  *    This sketch includes a `partitions.csv` with a large factory app slot.
  * 4. Verify and upload the example to the ESP board.
  *

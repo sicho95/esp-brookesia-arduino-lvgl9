@@ -23,7 +23,14 @@ Then, follow the steps below to configure the libraries and upload the example:
     - [mandatory] Enable the `LV_USE_SNAPSHOT` macro in the *lv_conf.h* file.
     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
 
-3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and configure its parameters. Select `Partition Scheme: Custom`; this sketch includes a `partitions.csv` with a large factory app slot because the full Phone example plus Arduino_GFX and SensorLib is larger than Arduino-ESP32's 3 MB `huge_app` slot.
+3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and configure its parameters:
+    - `Flash Size`: `16MB`
+    - `Partition Scheme`: `Custom`
+    - `PSRAM`: `OPI PSRAM`
+    - `USB Mode`: `Hardware CDC and JTAG`
+    - `USB CDC On Boot`: either `Enabled` or `Disabled`
+
+    This sketch includes a `partitions.csv` with a large factory app slot because the full Phone example plus Arduino_GFX and SensorLib is larger than Arduino-ESP32's 3 MB `huge_app` slot. Do not use `QSPI PSRAM`; the Waveshare ESP32-S3 Touch AMOLED 2.16 uses OPI PSRAM, and the wrong mode can reboot immediately with `quad_psram: PSRAM chip is not connected, or wrong PSRAM line mode`.
 4. Verify and upload the example to the ESP board.
 
 Do not copy the library `src` directory into this sketch folder. Install or link the whole `esp-brookesia-arduino-lvgl9` repository as an Arduino library under `Documents/Arduino/libraries`; otherwise Arduino may compile two copies of Brookesia and fail with class redefinition errors.
