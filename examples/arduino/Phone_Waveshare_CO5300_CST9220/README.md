@@ -22,7 +22,7 @@ Then, follow the steps below to configure the libraries and upload the example:
 
     - This sketch includes a local *lv_conf.h* with the fonts used by the bundled Brookesia demo apps.
     - Brookesia app snapshots are disabled in the Waveshare stylesheet at runtime. A 480 x 480 snapshot can fail allocation on this Arduino target, so recents use app icons instead.
-    - The LVGL display port uses full-screen render buffers when software rotation is enabled. This avoids partial-refresh artifacts on animated Squareline screens.
+    - The LVGL display port exposes one board-level render switch, `LVGL_PORT_RENDER_MODE`, in [lvgl_port_waveshare.h](./lvgl_port_waveshare.h). Keep `LV_DISPLAY_RENDER_MODE_PARTIAL` for boards with stable hardware orientation. Use `LV_DISPLAY_RENDER_MODE_FULL` when the board needs software rotation or shows partial-refresh artifacts.
     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
 
 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and configure its parameters:
@@ -37,7 +37,7 @@ Then, follow the steps below to configure the libraries and upload the example:
 
 Do not copy the library `src` directory into this sketch folder. Install or link the whole `esp-brookesia-arduino-lvgl9` repository as an Arduino library under `Documents/Arduino/libraries`; otherwise Arduino may compile two copies of Brookesia and fail with class redefinition errors.
 
-Apps remain paused in the background when returning home. Open recents and drag an app card upward to close it.
+Apps remain paused in the background when returning home. In this Waveshare example, recents use launcher icons instead of live snapshots, the trash icon closes only the currently selected app, and the upward-close gesture is tuned with lower thresholds for the 480 x 480 screen.
 
 ## Technical Support and Feedback
 

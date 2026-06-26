@@ -465,7 +465,9 @@ ESP_Brookesia_CoreApp *ESP_Brookesia_CoreManager::getRunningAppById(int id)
 const lv_draw_buf_t *ESP_Brookesia_CoreManager::getAppSnapshot(int id)
 {
     auto it = _id_app_snapshot_map.find(id);
-    ESP_BROOKESIA_CHECK_FALSE_RETURN(it != _id_app_snapshot_map.end(), nullptr, "App snapshot not found");
+    if (it == _id_app_snapshot_map.end()) {
+        return nullptr;
+    }
 
     return it->second->image_resource;
 }

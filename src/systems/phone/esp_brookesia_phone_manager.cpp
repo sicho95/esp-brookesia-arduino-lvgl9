@@ -1205,6 +1205,10 @@ void ESP_Brookesia_PhoneManager::onRecentsScreenSnapshotDeletedEventCallback(lv_
     ESP_BROOKESIA_CHECK_NULL_EXIT(recents_screen, "Invalid recents_screen");
     app_id = (intptr_t)lv_event_get_param(event);
 
+    if ((app_id <= 0) && (manager->_recents_screen_active_app != nullptr)) {
+        app_id = manager->_recents_screen_active_app->getId();
+    }
+
     if (app_id > 0) {
         app_event_data.id = app_id;
         ESP_BROOKESIA_CHECK_FALSE_EXIT(manager->_core.sendAppEvent(&app_event_data), "Core send app event failed");

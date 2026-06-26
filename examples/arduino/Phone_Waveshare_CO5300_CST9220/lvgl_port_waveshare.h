@@ -26,12 +26,21 @@
 #define WAVESHARE_LCD_HEIGHT           (480)
 
 #define LVGL_PORT_TICK_PERIOD_MS       (2)
-#define LVGL_PORT_BUFFER_LINES         (WAVESHARE_LCD_HEIGHT)
 #define LVGL_PORT_TASK_MAX_DELAY_MS    (500)
 #define LVGL_PORT_TASK_MIN_DELAY_MS    (2)
 #define LVGL_PORT_TASK_STACK_SIZE      (16 * 1024)
 #define LVGL_PORT_TASK_PRIORITY        (2)
 #define LVGL_PORT_TASK_CORE            (ARDUINO_RUNNING_CORE)
+
+/*
+ * Single render-mode switch for board ports:
+ * - LV_DISPLAY_RENDER_MODE_PARTIAL saves PSRAM and is usually preferred.
+ * - LV_DISPLAY_RENDER_MODE_FULL is safer when a panel needs software rotation;
+ *   the Waveshare CO5300 showed partial-refresh artifacts in animated
+ *   Squareline screens with rotated partial flushes.
+ */
+#define LVGL_PORT_RENDER_MODE          LV_DISPLAY_RENDER_MODE_FULL
+#define LVGL_PORT_BUFFER_LINES         ((LVGL_PORT_RENDER_MODE == LV_DISPLAY_RENDER_MODE_FULL) ? WAVESHARE_LCD_HEIGHT : 20)
 
 /*
  * The CO5300 driver used by Arduino_GFX does not expose a reliable 90/270

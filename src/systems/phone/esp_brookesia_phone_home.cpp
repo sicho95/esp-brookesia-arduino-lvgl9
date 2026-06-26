@@ -188,7 +188,8 @@ bool ESP_Brookesia_PhoneHome::processAppRun(ESP_Brookesia_CoreApp *app)
         ESP_BROOKESIA_LOGD("No recents_screen");
     } else {
         ESP_BROOKESIA_LOGD("Add recents_screen snapshot");
-        ESP_BROOKESIA_CHECK_FALSE_RETURN(phone_app->updateRecentsScreenSnapshotConf(nullptr), false,
+        const void *recents_image = _core.getCoreManager().getAppSnapshot(phone_app->getId());
+        ESP_BROOKESIA_CHECK_FALSE_RETURN(phone_app->updateRecentsScreenSnapshotConf(recents_image), false,
                                          "Update snapshot conf failed");
         ESP_BROOKESIA_CHECK_FALSE_RETURN(_recents_screen->addSnapshot(phone_app->_recents_screen_snapshot_conf), false,
                                          "RecentsScreen add snapshot failed");

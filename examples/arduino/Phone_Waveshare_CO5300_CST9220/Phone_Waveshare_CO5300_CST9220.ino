@@ -111,6 +111,10 @@ void setup()
     stylesheet->home.recents_screen.data.flags.enable_table_snapshot_use_icon_image = 1;
     stylesheet->manager.flags.enable_recents_screen_snapshot_drag = 1;
     stylesheet->manager.flags.enable_recents_screen_hide_when_no_snapshot = 0;
+    stylesheet->manager.recents_screen.drag_snapshot_y_step = 6;
+    stylesheet->manager.recents_screen.drag_snapshot_y_threshold = 36;
+    stylesheet->manager.recents_screen.drag_snapshot_angle_threshold = 45;
+    stylesheet->manager.recents_screen.delete_snapshot_y_threshold = 28;
 
     Serial.printf("Using stylesheet (%s)\n", stylesheet->core.name);
     ESP_BROOKESIA_CHECK_FALSE_EXIT(phone->addStylesheet(stylesheet), "Add stylesheet failed");

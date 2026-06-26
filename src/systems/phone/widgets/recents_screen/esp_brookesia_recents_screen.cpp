@@ -597,7 +597,6 @@ void ESP_Brookesia_RecentsScreen::onTrashTouchEventCallback(lv_event_t *event)
 {
     lv_event_code_t event_code = lv_event_get_code(event);
     ESP_Brookesia_RecentsScreen *recents_screen = (ESP_Brookesia_RecentsScreen *)lv_event_get_user_data(event);
-    std::unordered_map<int, std::shared_ptr<ESP_Brookesia_RecentsScreenSnapshot>> id_snapshot_map;
 
     ESP_BROOKESIA_LOGD("Trash touch event callback");
     ESP_BROOKESIA_CHECK_NULL_EXIT(recents_screen, "Invalid recents_screen object");
@@ -608,13 +607,6 @@ void ESP_Brookesia_RecentsScreen::onTrashTouchEventCallback(lv_event_t *event)
         if (recents_screen->_is_trash_pressed_losted) {
             break;
         }
-        // Since the snapshot may be deleted during the loop, we need to copy the map first
-        id_snapshot_map = recents_screen->_id_snapshot_map;
-        for (auto &it : id_snapshot_map) {
-            lv_obj_send_event(recents_screen->getEventObject(), recents_screen->getSnapshotDeletedEventCode(),
-                              reinterpret_cast<void *>(it.first));
-        }
-        // Send this event to notify that trash icon is clicked
         lv_obj_send_event(recents_screen->getEventObject(), recents_screen->getSnapshotDeletedEventCode(),
                           reinterpret_cast<void *>(0));
         break;
