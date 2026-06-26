@@ -22,7 +22,7 @@
  *
  * 2. For **lvgl**:
  *
- *     - [mandatory] Enable the `LV_USE_SNAPSHOT` macro in the *lv_conf.h* file.
+ *     - This sketch includes a local *lv_conf.h* with `LV_USE_SNAPSHOT` enabled for Brookesia recents/app snapshots.
  *     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
  *
  * 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and select:

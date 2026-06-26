@@ -25,9 +25,6 @@ static Arduino_CO5300 *lcd = nullptr;
 static TouchDrvCST92xx touch;
 static bool touch_ok = false;
 static volatile bool touch_irq_seen = false;
-static uint32_t last_touch_poll_ms = 0;
-static int16_t touch_x[5] = {};
-static int16_t touch_y[5] = {};
 
 static SemaphoreHandle_t lvgl_mux = nullptr;
 static TaskHandle_t lvgl_task_handle = nullptr;
@@ -158,22 +155,19 @@ static void touchpad_read(lv_indev_t *indev, lv_indev_data_t *data)
         return;
     }
 
-    const uint32_t now = millis();
     const bool irq_active = digitalRead(WAVESHARE_TP_INT) == LOW;
-    const bool poll_due = (now - last_touch_poll_ms) >= 12;
-    if (!touch_irq_seen && !irq_active && !poll_due) {
+    if (!touch_irq_seen && !irq_active) {
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
 
     touch_irq_seen = false;
-    last_touch_poll_ms = now;
 
-    const uint8_t max_points = min<uint8_t>(touch.getSupportTouchPoint(), 5);
-    const uint8_t count = (max_points > 0) ? touch.getPoint(touch_x, touch_y, max_points) : 0;
-    if (count > 0) {
-        data->point.x = constrain(touch_x[0], 0, WAVESHARE_LCD_WIDTH - 1);
-        data->point.y = constrain(touch_y[0], 0, WAVESHARE_LCD_HEIGHT - 1);
+    const TouchPoints &points = touch.getTouchPoints();
+    if (points.hasPoints()) {
+        const TouchPoint &point = points.getPoint(0);
+        data->point.x = constrain(point.x, 0, WAVESHARE_LCD_WIDTH - 1);
+        data->point.y = constrain(point.y, 0, WAVESHARE_LCD_HEIGHT - 1);
         data->state = LV_INDEV_STATE_PRESSED;
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
