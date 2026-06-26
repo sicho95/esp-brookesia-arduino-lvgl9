@@ -693,6 +693,7 @@ void ESP_Brookesia_PhoneManager::onGestureNavigationPressingEventCallback(lv_eve
 void ESP_Brookesia_PhoneManager::onGestureNavigationReleaseEventCallback(lv_event_t *event)
 {
     ESP_Brookesia_PhoneManager *manager = nullptr;
+    ESP_Brookesia_PhoneApp *active_app = nullptr;
     ESP_Brookesia_GestureInfo_t *gesture_info = nullptr;
     ESP_Brookesia_CoreNavigateType_t navigation_type = ESP_BROOKESIA_CORE_NAVIGATE_TYPE_MAX;
 
@@ -702,6 +703,7 @@ void ESP_Brookesia_PhoneManager::onGestureNavigationReleaseEventCallback(lv_even
     manager = static_cast<ESP_Brookesia_PhoneManager *>(lv_event_get_user_data(event));
     ESP_BROOKESIA_CHECK_NULL_EXIT(manager, "Invalid manager");
     manager->_flags.is_gesture_navigation_disabled = false;
+    active_app = static_cast<ESP_Brookesia_PhoneApp *>(manager->getActiveApp());
     // Check if the gesture is released and enabled
     if (!manager->_flags.enable_gesture_navigation) {
         return;
@@ -718,6 +720,10 @@ void ESP_Brookesia_PhoneManager::onGestureNavigationReleaseEventCallback(lv_even
     if ((gesture_info->start_area & ESP_BROOKESIA_GESTURE_AREA_BOTTOM_EDGE) && (gesture_info->flags.short_duration) &&
             (gesture_info->direction & ESP_BROOKESIA_GESTURE_DIR_UP) && manager->_flags.enable_gesture_navigation_home) {
         navigation_type = ESP_BROOKESIA_CORE_NAVIGATE_TYPE_HOME;
+    } else if ((gesture_info->start_area & ESP_BROOKESIA_GESTURE_AREA_BOTTOM_EDGE) &&
+               (gesture_info->direction & ESP_BROOKESIA_GESTURE_DIR_UP) &&
+               manager->_flags.enable_gesture_navigation_recents_app && (active_app == nullptr)) {
+        navigation_type = ESP_BROOKESIA_CORE_NAVIGATE_TYPE_RECENTS_SCREEN;
     }
 
     // Only process the navigation event if the navigation type is valid
@@ -1190,6 +1196,7 @@ process:
 void ESP_Brookesia_PhoneManager::onRecentsScreenSnapshotDeletedEventCallback(lv_event_t *event)
 {
     int app_id = -1;
+    int next_app_index = -1;
     ESP_Brookesia_PhoneManager *manager = nullptr;
     ESP_Brookesia_RecentsScreen *recents_screen = nullptr;
     ESP_Brookesia_CoreAppEventData_t app_event_data = {
@@ -1210,6 +1217,10 @@ void ESP_Brookesia_PhoneManager::onRecentsScreenSnapshotDeletedEventCallback(lv_
     }
 
     if (app_id > 0) {
+        next_app_index = manager->getRunningAppIndexById(app_id);
+        if (next_app_index >= 0) {
+            next_app_index = min(next_app_index, manager->getRunningAppCount() - 2);
+        }
         app_event_data.id = app_id;
         ESP_BROOKESIA_CHECK_FALSE_EXIT(manager->_core.sendAppEvent(&app_event_data), "Core send app event failed");
     }
@@ -1219,6 +1230,15 @@ void ESP_Brookesia_PhoneManager::onRecentsScreenSnapshotDeletedEventCallback(lv_
         manager->_recents_screen_active_app = nullptr;
         if (manager->data.flags.enable_recents_screen_hide_when_no_snapshot) {
             ESP_BROOKESIA_CHECK_FALSE_EXIT(manager->processRecentsScreenHide(), "Manager hide recents_screen failed");
+        }
+    } else if (next_app_index >= 0) {
+        manager->_recents_screen_active_app = manager->getRunningAppByIdenx(next_app_index);
+        if (manager->_recents_screen_active_app != nullptr) {
+            ESP_BROOKESIA_CHECK_FALSE_EXIT(
+                recents_screen->scrollToSnapshotByIndex(next_app_index),
+                "Recents screen scroll snapshot(%d) to %d failed",
+                manager->_recents_screen_active_app->getId(), next_app_index
+            );
         }
     }
 }
