@@ -26,6 +26,8 @@ Then, follow the steps below to configure the libraries and upload the example:
 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and configure its parameters. Select `Partition Scheme: Custom`; this sketch includes a `partitions.csv` with a large factory app slot because the full Phone example plus Arduino_GFX and SensorLib is larger than Arduino-ESP32's 3 MB `huge_app` slot.
 4. Verify and upload the example to the ESP board.
 
+Do not copy the library `src` directory into this sketch folder. Install or link the whole `esp-brookesia-arduino-lvgl9` repository as an Arduino library under `Documents/Arduino/libraries`; otherwise Arduino may compile two copies of Brookesia and fail with class redefinition errors.
+
 ## Technical Support and Feedback
 
 Please use the following feedback channels:
