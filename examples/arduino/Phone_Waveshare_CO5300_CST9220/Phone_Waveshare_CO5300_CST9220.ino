@@ -22,7 +22,8 @@
  *
  * 2. For **lvgl**:
  *
- *     - This sketch includes a local *lv_conf.h* with `LV_USE_SNAPSHOT` enabled for Brookesia recents/app snapshots.
+ *     - This sketch includes a local *lv_conf.h* with the fonts used by the bundled Brookesia demo apps.
+ *     - App snapshots are disabled below because a 480 x 480 snapshot can fail allocation on this Arduino target.
  *     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
  *
  * 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and select:
@@ -105,6 +106,11 @@ void setup()
     /* Add external stylesheet and activate it */
     ESP_Brookesia_PhoneStylesheet_t *stylesheet = new ESP_Brookesia_PhoneStylesheet_t(EXAMPLE_ESP_BROOKESIA_PHONE_DARK_STYLESHEET());
     ESP_BROOKESIA_CHECK_NULL_EXIT(stylesheet, "Create stylesheet failed");
+
+    stylesheet->core.manager.flags.enable_app_save_snapshot = 0;
+    stylesheet->home.recents_screen.data.flags.enable_table_snapshot_use_icon_image = 1;
+    stylesheet->manager.flags.enable_recents_screen_snapshot_drag = 0;
+    stylesheet->manager.flags.enable_recents_screen_hide_when_no_snapshot = 0;
 
     Serial.printf("Using stylesheet (%s)\n", stylesheet->core.name);
     ESP_BROOKESIA_CHECK_FALSE_EXIT(phone->addStylesheet(stylesheet), "Add stylesheet failed");

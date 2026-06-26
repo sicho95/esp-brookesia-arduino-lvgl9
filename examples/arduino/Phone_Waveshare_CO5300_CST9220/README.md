@@ -20,7 +20,8 @@ Then, follow the steps below to configure the libraries and upload the example:
 
 2. For **lvgl**:
 
-    - This sketch includes a local *lv_conf.h* with `LV_USE_SNAPSHOT` enabled for Brookesia recents/app snapshots.
+    - This sketch includes a local *lv_conf.h* with the fonts used by the bundled Brookesia demo apps.
+    - Brookesia app snapshots are disabled in the Waveshare stylesheet at runtime. A 480 x 480 snapshot can fail allocation on this Arduino target, so recents use app icons instead.
     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
 
 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and configure its parameters:

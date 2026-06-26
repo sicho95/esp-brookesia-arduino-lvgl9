@@ -19,6 +19,7 @@
 static const char *TAG = "waveshare_port";
 static constexpr uint32_t BUFFER_PIXELS = WAVESHARE_LCD_WIDTH * LVGL_PORT_BUFFER_LINES;
 static constexpr uint32_t BUFFER_BYTES = BUFFER_PIXELS * 2;
+static constexpr uint8_t CST9220_ACK = 0xAB;
 
 static Arduino_DataBus *lcd_bus = nullptr;
 static Arduino_CO5300 *lcd = nullptr;
@@ -30,6 +31,7 @@ static SemaphoreHandle_t lvgl_mux = nullptr;
 static TaskHandle_t lvgl_task_handle = nullptr;
 static esp_timer_handle_t lvgl_tick_timer = nullptr;
 static void *lvgl_buf[2] = {};
+static void *lvgl_rotation_buf = nullptr;
 static lv_display_t *lvgl_display = nullptr;
 static lv_indev_t *lvgl_touch = nullptr;
 
@@ -109,16 +111,163 @@ static bool touch_init()
     return true;
 }
 
+static bool cst9220_write_ack()
+{
+    Wire.beginTransmission(CST92XX_SLAVE_ADDRESS);
+    Wire.write(0xD0);
+    Wire.write(0x00);
+    Wire.write(CST9220_ACK);
+    return Wire.endTransmission() == 0;
+}
+
+static bool cst9220_read_raw_point(uint16_t *x, uint16_t *y)
+{
+    static constexpr uint8_t CST92XX_TOUCH_BUFFER_SIZE = 15;
+    static constexpr uint8_t CST92XX_MAX_TOUCH_POINTS = 2;
+    uint8_t buffer[CST92XX_TOUCH_BUFFER_SIZE] = {};
+
+    Wire.beginTransmission(CST92XX_SLAVE_ADDRESS);
+    Wire.write(0xD0);
+    Wire.write(0x00);
+    if (Wire.endTransmission(false) != 0) {
+        return false;
+    }
+
+    if (Wire.requestFrom(CST92XX_SLAVE_ADDRESS, CST92XX_TOUCH_BUFFER_SIZE) != CST92XX_TOUCH_BUFFER_SIZE) {
+        cst9220_write_ack();
+        return false;
+    }
+
+    for (uint8_t i = 0; i < CST92XX_TOUCH_BUFFER_SIZE; i++) {
+        buffer[i] = Wire.read();
+    }
+    cst9220_write_ack();
+
+    if (buffer[0] == CST9220_ACK || buffer[6] != CST9220_ACK) {
+        return false;
+    }
+
+    const uint8_t num_points = buffer[5] & 0x7F;
+    if (num_points == 0 || num_points > CST92XX_MAX_TOUCH_POINTS) {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < num_points; i++) {
+        const uint8_t *point_data = buffer + (i * 5) + (i == 0 ? 0 : 2);
+        const uint8_t id = point_data[0] >> 4;
+        const uint8_t event = point_data[0] & 0x0F;
+        if (event != 0x06 || id >= CST92XX_MAX_TOUCH_POINTS) {
+            continue;
+        }
+
+        *x = (static_cast<uint16_t>(point_data[1]) << 4) | (point_data[3] >> 4);
+        *y = (static_cast<uint16_t>(point_data[2]) << 4) | (point_data[3] & 0x0F);
+        return true;
+    }
+
+    return false;
+}
+
+static void rotate_touch_point(uint16_t raw_x, uint16_t raw_y, lv_point_t *point)
+{
+    raw_x = constrain(raw_x, 0, WAVESHARE_LCD_WIDTH - 1);
+    raw_y = constrain(raw_y, 0, WAVESHARE_LCD_HEIGHT - 1);
+
+    switch (WAVESHARE_DISPLAY_ROTATION) {
+    case LV_DISPLAY_ROTATION_90:
+        point->x = raw_y;
+        point->y = WAVESHARE_LCD_WIDTH - 1 - raw_x;
+        break;
+    case LV_DISPLAY_ROTATION_180:
+        point->x = WAVESHARE_LCD_WIDTH - 1 - raw_x;
+        point->y = WAVESHARE_LCD_HEIGHT - 1 - raw_y;
+        break;
+    case LV_DISPLAY_ROTATION_270:
+        point->x = WAVESHARE_LCD_HEIGHT - 1 - raw_y;
+        point->y = raw_x;
+        break;
+    case LV_DISPLAY_ROTATION_0:
+    default:
+        point->x = raw_x;
+        point->y = raw_y;
+        break;
+    }
+}
+
+static void flush_rotated(const lv_area_t *area, const uint16_t *src)
+{
+    const int32_t src_w = area->x2 - area->x1 + 1;
+    const int32_t src_h = area->y2 - area->y1 + 1;
+    uint16_t *dst = reinterpret_cast<uint16_t *>(lvgl_rotation_buf);
+
+    switch (WAVESHARE_DISPLAY_ROTATION) {
+    case LV_DISPLAY_ROTATION_90:
+        for (int32_t y = 0; y < src_h; y++) {
+            for (int32_t x = 0; x < src_w; x++) {
+                dst[(x * src_h) + (src_h - 1 - y)] = src[(y * src_w) + x];
+            }
+        }
+        lcd->draw16bitRGBBitmap(
+            WAVESHARE_LCD_HEIGHT - 1 - area->y2,
+            area->x1,
+            dst,
+            src_h,
+            src_w
+        );
+        break;
+
+    case LV_DISPLAY_ROTATION_180:
+        for (int32_t y = 0; y < src_h; y++) {
+            for (int32_t x = 0; x < src_w; x++) {
+                dst[((src_h - 1 - y) * src_w) + (src_w - 1 - x)] = src[(y * src_w) + x];
+            }
+        }
+        lcd->draw16bitRGBBitmap(
+            WAVESHARE_LCD_WIDTH - 1 - area->x2,
+            WAVESHARE_LCD_HEIGHT - 1 - area->y2,
+            dst,
+            src_w,
+            src_h
+        );
+        break;
+
+    case LV_DISPLAY_ROTATION_270:
+        for (int32_t y = 0; y < src_h; y++) {
+            for (int32_t x = 0; x < src_w; x++) {
+                dst[((src_w - 1 - x) * src_h) + y] = src[(y * src_w) + x];
+            }
+        }
+        lcd->draw16bitRGBBitmap(
+            area->y1,
+            WAVESHARE_LCD_WIDTH - 1 - area->x2,
+            dst,
+            src_h,
+            src_w
+        );
+        break;
+
+    case LV_DISPLAY_ROTATION_0:
+    default:
+        lcd->draw16bitRGBBitmap(area->x1, area->y1, src, src_w, src_h);
+        break;
+    }
+}
+
 static void flush_callback(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 {
     if (lcd != nullptr) {
-        lcd->draw16bitRGBBitmap(
-            area->x1,
-            area->y1,
-            reinterpret_cast<uint16_t *>(px_map),
-            area->x2 - area->x1 + 1,
-            area->y2 - area->y1 + 1
-        );
+        const uint16_t *src = reinterpret_cast<uint16_t *>(px_map);
+        if (WAVESHARE_DISPLAY_ROTATION == LV_DISPLAY_ROTATION_0 || lvgl_rotation_buf == nullptr) {
+            lcd->draw16bitRGBBitmap(
+                area->x1,
+                area->y1,
+                src,
+                area->x2 - area->x1 + 1,
+                area->y2 - area->y1 + 1
+            );
+        } else {
+            flush_rotated(area, src);
+        }
     }
     lv_display_flush_ready(display);
 }
@@ -132,6 +281,17 @@ static lv_display_t *display_init()
         }
         if (lvgl_buf[i] == nullptr) {
             ESP_LOGE(TAG, "Allocate LVGL buffer %d failed", i);
+            return nullptr;
+        }
+    }
+
+    if (WAVESHARE_DISPLAY_ROTATION != LV_DISPLAY_ROTATION_0) {
+        lvgl_rotation_buf = heap_caps_malloc(BUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (lvgl_rotation_buf == nullptr) {
+            lvgl_rotation_buf = heap_caps_malloc(BUFFER_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+        if (lvgl_rotation_buf == nullptr) {
+            ESP_LOGE(TAG, "Allocate LVGL rotation buffer failed");
             return nullptr;
         }
     }
@@ -163,11 +323,10 @@ static void touchpad_read(lv_indev_t *indev, lv_indev_data_t *data)
 
     touch_irq_seen = false;
 
-    const TouchPoints &points = touch.getTouchPoints();
-    if (points.hasPoints()) {
-        const TouchPoint &point = points.getPoint(0);
-        data->point.x = constrain(point.x, 0, WAVESHARE_LCD_WIDTH - 1);
-        data->point.y = constrain(point.y, 0, WAVESHARE_LCD_HEIGHT - 1);
+    uint16_t raw_x = 0;
+    uint16_t raw_y = 0;
+    if (cst9220_read_raw_point(&raw_x, &raw_y)) {
+        rotate_touch_point(raw_x, raw_y, &data->point);
         data->state = LV_INDEV_STATE_PRESSED;
     } else {
         data->state = LV_INDEV_STATE_RELEASED;

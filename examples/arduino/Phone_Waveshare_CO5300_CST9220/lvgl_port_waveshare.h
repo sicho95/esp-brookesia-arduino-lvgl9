@@ -29,9 +29,16 @@
 #define LVGL_PORT_BUFFER_LINES         (20)
 #define LVGL_PORT_TASK_MAX_DELAY_MS    (500)
 #define LVGL_PORT_TASK_MIN_DELAY_MS    (2)
-#define LVGL_PORT_TASK_STACK_SIZE      (8 * 1024)
+#define LVGL_PORT_TASK_STACK_SIZE      (16 * 1024)
 #define LVGL_PORT_TASK_PRIORITY        (2)
 #define LVGL_PORT_TASK_CORE            (ARDUINO_RUNNING_CORE)
+
+/*
+ * The CO5300 driver used by Arduino_GFX does not expose a reliable 90/270
+ * hardware rotation path on this panel. Keep the LCD at rotation 0 and rotate
+ * both flushed pixels and raw touch coordinates in the LVGL port.
+ */
+#define WAVESHARE_DISPLAY_ROTATION     LV_DISPLAY_ROTATION_270
 
 #ifdef __cplusplus
 extern "C" {
