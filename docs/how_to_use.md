@@ -27,8 +27,9 @@
 
 When using the Arduino examples in this fork:
 
-- Install this repository itself as an Arduino library under `Documents/Arduino/libraries/esp-brookesia-arduino-lvgl9`.
+- Install this repository itself as an Arduino library under `Documents/Arduino/libraries/esp-brookesia-arduino-lvgl9`, or create a symlink there to your working tree.
 - Do not compile the examples only from a random unzip location; otherwise Arduino may fail on `#include <esp_brookesia.hpp>`.
+- Do not copy the library `src/` directory into a sketch folder; Arduino may compile duplicate sources and fail with redefinition errors.
 - Install dependent libraries from the Arduino IDE Library Manager.
 
 For the generic `examples/arduino/Phone` sketch, install:
@@ -44,7 +45,7 @@ For the Waveshare-specific `examples/arduino/Phone_Waveshare_CO5300_CST9220` ske
 - `GFX Library for Arduino`
 - `SensorLib`
 
-The Waveshare sketch does not use `ESP32_Display_Panel` or `ESP32_IO_Expander`.
+The Waveshare sketch does not use `ESP32_Display_Panel` or `ESP32_IO_Expander` directly, but those libraries remain part of this fork's Arduino dependency story because the generic Phone example still uses them.
 
 ## Adding to Project
 

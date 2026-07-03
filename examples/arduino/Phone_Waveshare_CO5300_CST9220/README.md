@@ -8,7 +8,7 @@ The example is suitable for touchscreens with a resolution of `240 x 240` or hig
 
 To use this example, please firstly install the following dependent libraries:
 
-- esp-brookesia-arduino-lvgl9 (this repository, installed as an Arduino library under `Documents/Arduino/libraries`)
+- esp-brookesia-arduino-lvgl9 (this repository, installed as an Arduino library under `Documents/Arduino/libraries`, or symlinked there)
 - GFX Library for Arduino
 - SensorLib
 - lvgl (>= v9.0, < v10)
@@ -25,6 +25,7 @@ Then, follow the steps below to configure the libraries and upload the example:
     - This sketch includes a local *lv_conf.h* with the fonts used by the bundled Brookesia demo apps.
     - Brookesia app snapshots are disabled in the Waveshare stylesheet at runtime. A 480 x 480 snapshot can fail allocation on this Arduino target, so recents use app icons instead.
     - The LVGL display port exposes one board-level render switch, `LVGL_PORT_RENDER_MODE`, in [lvgl_port_waveshare.h](./lvgl_port_waveshare.h). Keep `LV_DISPLAY_RENDER_MODE_PARTIAL` for boards with stable hardware orientation. Use `LV_DISPLAY_RENDER_MODE_FULL` when the board needs software rotation or shows partial-refresh artifacts.
+    - On the validated Waveshare 480 x 480 example, app launch/close, recents carousel, close by trash, close by upward swipe, and automatic return to the launcher after the last app closes are working. Automatic screen rotation is not implemented.
     - [optional] Modify the macros in the [lvgl_port_waveshare.h](./lvgl_port_waveshare.h) file to configure the lvgl porting parameters.
 
 3. Navigate to the `Tools` menu in the Arduino IDE to choose ESP32-S3 and configure its parameters:

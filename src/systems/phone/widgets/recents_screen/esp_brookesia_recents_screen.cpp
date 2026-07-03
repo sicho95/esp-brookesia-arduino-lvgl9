@@ -606,6 +606,7 @@ void ESP_Brookesia_RecentsScreen::refreshSnapshotPresentation(void) const
     int best_center_dist = INT32_MAX;
     int best_left_dist = INT32_MAX;
     int best_right_dist = INT32_MAX;
+    lv_area_t anchor_area = {};
     lv_area_t table_area = {};
 
     if (!checkInitialized() || _id_snapshot_map.empty()) {
@@ -614,8 +615,17 @@ void ESP_Brookesia_RecentsScreen::refreshSnapshotPresentation(void) const
 
     lv_obj_update_layout(_snapshot_table.get());
     lv_obj_refr_pos(_snapshot_table.get());
+    if (_trash_obj != nullptr) {
+        lv_obj_update_layout(_trash_obj.get());
+        lv_obj_refr_pos(_trash_obj.get());
+        lv_obj_get_coords(_trash_obj.get(), &anchor_area);
+    } else {
+        lv_obj_get_coords(_snapshot_table.get(), &anchor_area);
+    }
     lv_obj_get_coords(_snapshot_table.get(), &table_area);
+    const int anchor_center_x = (anchor_area.x1 + anchor_area.x2) / 2;
     const int table_center_x = (table_area.x1 + table_area.x2) / 2;
+    const int center_bias_x = anchor_center_x - table_center_x;
 
     for (const auto &it : _id_snapshot_map) {
         lv_obj_t *snapshot_main_obj = it.second != nullptr ? it.second->getMainObj() : nullptr;
@@ -672,57 +682,67 @@ void ESP_Brookesia_RecentsScreen::refreshSnapshotPresentation(void) const
             relation = (dist < 0) ? -2 : 2;
         }
 
-        applySnapshotPresentation(snapshot_main_obj, relation);
+        applySnapshotPresentation(snapshot_main_obj, relation, center_bias_x);
     }
 }
 
-void ESP_Brookesia_RecentsScreen::applySnapshotPresentation(lv_obj_t *snapshot_main_obj, int relation) const
+void ESP_Brookesia_RecentsScreen::applySnapshotPresentation(lv_obj_t *snapshot_main_obj, int relation, int center_bias_x) const
 {
-    constexpr int scale_center = LV_SCALE_NONE;
-    constexpr int scale_side = LV_SCALE_NONE * 84 / 100;
-    constexpr int scale_far = LV_SCALE_NONE * 68 / 100;
-    constexpr int rotation_side = 140;
-    constexpr int rotation_far = 210;
-    constexpr int translate_side_x = 28;
-    constexpr int translate_side_y = 12;
-    constexpr int translate_far_x = 42;
-    constexpr int translate_far_y = 22;
+    constexpr int scale_center_x = LV_SCALE_NONE;
+    constexpr int scale_center_y = LV_SCALE_NONE;
+    constexpr int scale_side_x = LV_SCALE_NONE * 70 / 100;
+    constexpr int scale_side_y = LV_SCALE_NONE * 87 / 100;
+    constexpr int scale_far_x = LV_SCALE_NONE * 50 / 100;
+    constexpr int scale_far_y = LV_SCALE_NONE * 70 / 100;
+    constexpr int translate_side_x = 8;
+    constexpr int translate_side_y = 20;
+    constexpr int translate_far_x = 16;
+    constexpr int translate_far_y = 34;
+    const int width = lv_obj_get_width(snapshot_main_obj);
+    const int height = lv_obj_get_height(snapshot_main_obj);
 
     ESP_BROOKESIA_CHECK_NULL_EXIT(snapshot_main_obj, "Invalid snapshot main object");
 
-    lv_obj_set_style_transform_pivot_x(snapshot_main_obj, lv_obj_get_width(snapshot_main_obj) / 2, 0);
-    lv_obj_set_style_transform_pivot_y(snapshot_main_obj, lv_obj_get_height(snapshot_main_obj) / 2, 0);
+    lv_obj_set_style_transform_pivot_x(snapshot_main_obj, width / 2, 0);
+    lv_obj_set_style_transform_pivot_y(snapshot_main_obj, height / 2, 0);
+    lv_obj_set_style_transform_rotation(snapshot_main_obj, 0, 0);
+    lv_obj_set_style_transform_skew_x(snapshot_main_obj, 0, 0);
+    lv_obj_set_style_transform_skew_y(snapshot_main_obj, 0, 0);
 
     switch (relation) {
     case 0:
-        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_center, 0);
-        lv_obj_set_style_transform_rotation(snapshot_main_obj, 0, 0);
-        lv_obj_set_style_translate_x(snapshot_main_obj, 0, 0);
+        lv_obj_set_style_transform_scale_x(snapshot_main_obj, scale_center_x, 0);
+        lv_obj_set_style_transform_scale_y(snapshot_main_obj, scale_center_y, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, center_bias_x, 0);
         lv_obj_set_style_translate_y(snapshot_main_obj, 0, 0);
         break;
     case -1:
-        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_side, 0);
-        lv_obj_set_style_transform_rotation(snapshot_main_obj, rotation_side, 0);
-        lv_obj_set_style_translate_x(snapshot_main_obj, translate_side_x, 0);
+        lv_obj_set_style_transform_pivot_x(snapshot_main_obj, width, 0);
+        lv_obj_set_style_transform_scale_x(snapshot_main_obj, scale_side_x, 0);
+        lv_obj_set_style_transform_scale_y(snapshot_main_obj, scale_side_y, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, translate_side_x + center_bias_x, 0);
         lv_obj_set_style_translate_y(snapshot_main_obj, translate_side_y, 0);
         break;
     case 1:
-        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_side, 0);
-        lv_obj_set_style_transform_rotation(snapshot_main_obj, -rotation_side, 0);
-        lv_obj_set_style_translate_x(snapshot_main_obj, -translate_side_x, 0);
+        lv_obj_set_style_transform_pivot_x(snapshot_main_obj, 0, 0);
+        lv_obj_set_style_transform_scale_x(snapshot_main_obj, scale_side_x, 0);
+        lv_obj_set_style_transform_scale_y(snapshot_main_obj, scale_side_y, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, -translate_side_x + center_bias_x, 0);
         lv_obj_set_style_translate_y(snapshot_main_obj, translate_side_y, 0);
         break;
     case -2:
-        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_far, 0);
-        lv_obj_set_style_transform_rotation(snapshot_main_obj, rotation_far, 0);
-        lv_obj_set_style_translate_x(snapshot_main_obj, translate_far_x, 0);
+        lv_obj_set_style_transform_pivot_x(snapshot_main_obj, width, 0);
+        lv_obj_set_style_transform_scale_x(snapshot_main_obj, scale_far_x, 0);
+        lv_obj_set_style_transform_scale_y(snapshot_main_obj, scale_far_y, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, translate_far_x + center_bias_x, 0);
         lv_obj_set_style_translate_y(snapshot_main_obj, translate_far_y, 0);
         break;
     case 2:
     default:
-        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_far, 0);
-        lv_obj_set_style_transform_rotation(snapshot_main_obj, -rotation_far, 0);
-        lv_obj_set_style_translate_x(snapshot_main_obj, -translate_far_x, 0);
+        lv_obj_set_style_transform_pivot_x(snapshot_main_obj, 0, 0);
+        lv_obj_set_style_transform_scale_x(snapshot_main_obj, scale_far_x, 0);
+        lv_obj_set_style_transform_scale_y(snapshot_main_obj, scale_far_y, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, -translate_far_x + center_bias_x, 0);
         lv_obj_set_style_translate_y(snapshot_main_obj, translate_far_y, 0);
         break;
     }

@@ -81,9 +81,9 @@ bool ESP_Brookesia_RecentsScreenSnapshot::begin(lv_obj_t *parent)
     lv_obj_clear_flag(drag_obj.get(), LV_OBJ_FLAG_SCROLLABLE);
     // Title
     lv_obj_add_style(title_obj.get(), _core.getCoreHome().getCoreContainerStyle(), 0);
-    lv_obj_align(title_obj.get(), LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_flex_flow(title_obj.get(), LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(title_obj.get(), LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_align(title_obj.get(), LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_flex_flow(title_obj.get(), LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(title_obj.get(), LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(title_obj.get(), LV_OBJ_FLAG_SCROLLABLE);
     // Title icon
     lv_obj_add_style(title_icon.get(), _core.getCoreHome().getCoreContainerStyle(), 0);
@@ -95,7 +95,7 @@ bool ESP_Brookesia_RecentsScreenSnapshot::begin(lv_obj_t *parent)
     lv_label_set_text_static(title_label.get(), _conf.name);
     // Snapshot
     lv_obj_add_style(snapshot_obj.get(), _core.getCoreHome().getCoreContainerStyle(), 0);
-    lv_obj_align(snapshot_obj.get(), LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_align(snapshot_obj.get(), LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_clear_flag(snapshot_obj.get(), LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_clip_corner(snapshot_obj.get(), true, 0);
     // Snapshot image
@@ -172,20 +172,16 @@ bool ESP_Brookesia_RecentsScreenSnapshot::updateByNewData(void)
     // Title
     lv_obj_set_size(_title_obj.get(), _data.title.main_size.width, _data.title.main_size.height);
     lv_obj_set_style_pad_column(_title_obj.get(), _data.title.main_layout_column_pad, 0);
+    lv_obj_set_style_pad_row(_title_obj.get(), 2, 0);
     // Title icon
-    h_factor = (float)(_data.title.icon_size.height) / ((const lv_img_dsc_t *)_conf.icon_image_resource)->header.h;
-    w_factor = (float)(_data.title.icon_size.width) / ((const lv_img_dsc_t *)_conf.icon_image_resource)->header.w;
-    if (h_factor < w_factor) {
-        lv_image_set_scale(_title_icon.get(), (int)(h_factor * LV_SCALE_NONE));
-    } else {
-        lv_image_set_scale(_title_icon.get(), (int)(w_factor * LV_SCALE_NONE));
-    }
-    lv_obj_set_size(_title_icon.get(), _data.title.icon_size.width, _data.title.icon_size.height);
-    lv_obj_refr_size(_title_icon.get());
+    lv_obj_add_flag(_title_icon.get(), LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_size(_title_icon.get(), 1, 1);
     // Title label
     lv_obj_set_style_text_font(_title_label.get(), (lv_font_t *)_data.title.text_font.font_resource, 0);
     lv_obj_set_style_text_color(_title_label.get(), lv_color_hex(_data.title.text_color.color), 0);
     lv_obj_set_style_text_opa(_title_label.get(), _data.title.text_color.opacity, 0);
+    lv_obj_set_width(_title_label.get(), _data.title.main_size.width);
+    lv_obj_set_style_text_align(_title_label.get(), LV_TEXT_ALIGN_CENTER, 0);
     // Snapshot
     lv_obj_set_size(_snapshot_obj.get(), _data.image.main_size.width, _data.image.main_size.height);
     lv_obj_set_style_radius(_snapshot_obj.get(), _data.image.radius, 0);

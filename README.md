@@ -8,17 +8,22 @@ Goal:
 - port the codebase from LVGL 8 APIs to LVGL 9
 - keep ESP32 / ESP32-S3 Arduino users able to build a Phone-style UI with launcher, status bar, navigation and app isolation
 
-Status: work in progress. The initial import was ESP-Brookesia `0.4.2`; the current source tree is backported from ESP-Brookesia `0.5.0` to get LVGL 9 APIs while keeping Arduino metadata and examples. The Arduino `Phone` example compiles with Arduino ESP32 core `3.3.8`, LVGL `9.5.0`, and a `huge_app` partition. A hardware-specific `Phone_Waveshare_CO5300_CST9220` example is also available for the Waveshare ESP32-S3 Touch AMOLED 2.16; it uses a local custom partition table because the full demo exceeds the 3 MB `huge_app` slot when Arduino_GFX and SensorLib are linked. Runtime validation is still pending and is tracked in [PORTING_LVGL9.md](./PORTING_LVGL9.md).
+Status: active fork. The initial import was ESP-Brookesia `0.4.2`; the current source tree is backported from ESP-Brookesia `0.5.0` to get LVGL 9 APIs while keeping Arduino metadata and examples. The Arduino `Phone` example compiles with Arduino ESP32 core `3.3.8`, LVGL `9.5.0`, and a `huge_app` partition. A hardware-specific `Phone_Waveshare_CO5300_CST9220` example is also available for the Waveshare ESP32-S3 Touch AMOLED 2.16; it uses a local custom partition table because the full demo exceeds the 3 MB `huge_app` slot when Arduino_GFX and SensorLib are linked. The Waveshare example has now been runtime-validated on hardware for app launch, app pause/resume via home, recents carousel navigation, close by trash, close by upward swipe, and automatic return to the launcher when the last app is closed. Current port status and remaining limits are tracked in [PORTING_LVGL9.md](./PORTING_LVGL9.md).
 
 Arduino IDE setup notes:
 
-- Install this repository itself as an Arduino library under `Documents/Arduino/libraries/esp-brookesia-arduino-lvgl9`. Opening an example from an arbitrary unzip directory is not enough for `#include <esp_brookesia.hpp>`.
+- Install this repository itself as an Arduino library under `Documents/Arduino/libraries/esp-brookesia-arduino-lvgl9`, or create a symlink there to your working tree. Opening an example directly from an arbitrary unzip directory is not enough for `#include <esp_brookesia.hpp>`.
+- Do not copy the repository `src/` folder into a sketch folder. Arduino can otherwise compile duplicate Brookesia sources and fail with redefinition errors.
 - For the generic `examples/arduino/Phone` sketch, install these dependent libraries from the Arduino IDE Library Manager:
   - `ESP32_Display_Panel`
   - `ESP32_IO_Expander`
   - `esp-lib-utils`
   - `lvgl`
-- For the Waveshare-specific `examples/arduino/Phone_Waveshare_CO5300_CST9220` sketch, `ESP32_Display_Panel` and `ESP32_IO_Expander` are not used, but `esp-brookesia-arduino-lvgl9` still must be installed as a library, alongside `lvgl`, `GFX Library for Arduino`, and `SensorLib`.
+- For the Waveshare-specific `examples/arduino/Phone_Waveshare_CO5300_CST9220` sketch, install:
+  - `lvgl`
+  - `GFX Library for Arduino`
+  - `SensorLib`
+- `ESP32_Display_Panel` and `ESP32_IO_Expander` are not used by the Waveshare sketch itself, but they remain dependencies for the generic Arduino examples and for the library metadata.
 
 Upstream references:
 

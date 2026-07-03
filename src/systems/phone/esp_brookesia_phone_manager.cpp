@@ -1186,21 +1186,28 @@ process:
         // Start or close the dragging app
         ESP_BROOKESIA_CHECK_FALSE_EXIT(manager->_core.sendAppEvent(&app_event_data), "Core send app event failed");
         // Scroll to another running app snapshot if the dragging app is closed
-        if ((app_event_data.type == ESP_BROOKESIA_CORE_APP_EVENT_TYPE_STOP) && (recents_screen_active_snapshot_index >= 0)) {
-            manager->_recents_screen_active_app = manager->getRunningAppByIdenx(recents_screen_active_snapshot_index);
-            if (manager->_recents_screen_active_app != nullptr) {
-                // If there are active apps, keep the carousel focused on the next available snapshot
-                ESP_BROOKESIA_LOGD("Recents screen scroll snapshot(%d) to %d", manager->_recents_screen_active_app->getId(),
-                                   recents_screen_active_snapshot_index);
-                if (!recents_screen->scrollToSnapshotByIndex(recents_screen_active_snapshot_index)) {
-                    ESP_BROOKESIA_LOGE("Recents screen scroll snapshot(%d) to %d failed",
-                                       manager->_recents_screen_active_app->getId(),
-                                       recents_screen_active_snapshot_index);
-                }
-            } else if (manager->data.flags.enable_recents_screen_hide_when_no_snapshot) {
-                // If there are no active apps, hide the recents_screen
-                ESP_BROOKESIA_LOGD("No active app, hide recents_screen");
+        if (app_event_data.type == ESP_BROOKESIA_CORE_APP_EVENT_TYPE_STOP) {
+            if (recents_screen->getSnapshotCount() == 0) {
+                ESP_BROOKESIA_LOGD("No snapshot after swipe close, hide recents_screen");
+                manager->_recents_screen_active_app = nullptr;
+                manager->_recents_screen_pause_app = nullptr;
                 ESP_BROOKESIA_CHECK_FALSE_EXIT(manager->processRecentsScreenHide(), "Hide recents_screen failed");
+                ESP_BROOKESIA_CHECK_FALSE_EXIT(
+                    manager->processHomeScreenChange(ESP_BROOKESIA_PHONE_MANAGER_SCREEN_MAIN, nullptr),
+                    "Switch to main screen failed"
+                );
+            } else if (recents_screen_active_snapshot_index >= 0) {
+                manager->_recents_screen_active_app = manager->getRunningAppByIdenx(recents_screen_active_snapshot_index);
+                if (manager->_recents_screen_active_app != nullptr) {
+                    // If there are active apps, keep the carousel focused on the next available snapshot
+                    ESP_BROOKESIA_LOGD("Recents screen scroll snapshot(%d) to %d", manager->_recents_screen_active_app->getId(),
+                                       recents_screen_active_snapshot_index);
+                    if (!recents_screen->scrollToSnapshotByIndex(recents_screen_active_snapshot_index)) {
+                        ESP_BROOKESIA_LOGE("Recents screen scroll snapshot(%d) to %d failed",
+                                           manager->_recents_screen_active_app->getId(),
+                                           recents_screen_active_snapshot_index);
+                    }
+                }
             }
         }
     }
@@ -1241,9 +1248,12 @@ void ESP_Brookesia_PhoneManager::onRecentsScreenSnapshotDeletedEventCallback(lv_
     if (recents_screen->getSnapshotCount() == 0) {
         ESP_BROOKESIA_LOGD("No snapshot in the recents_screen");
         manager->_recents_screen_active_app = nullptr;
-        if (manager->data.flags.enable_recents_screen_hide_when_no_snapshot) {
-            ESP_BROOKESIA_CHECK_FALSE_EXIT(manager->processRecentsScreenHide(), "Manager hide recents_screen failed");
-        }
+        manager->_recents_screen_pause_app = nullptr;
+        ESP_BROOKESIA_CHECK_FALSE_EXIT(manager->processRecentsScreenHide(), "Manager hide recents_screen failed");
+        ESP_BROOKESIA_CHECK_FALSE_EXIT(
+            manager->processHomeScreenChange(ESP_BROOKESIA_PHONE_MANAGER_SCREEN_MAIN, nullptr),
+            "Manager switch to main screen failed"
+        );
     } else if (next_app_index >= 0) {
         manager->_recents_screen_active_app = manager->getRunningAppByIdenx(next_app_index);
         if (manager->_recents_screen_active_app != nullptr) {

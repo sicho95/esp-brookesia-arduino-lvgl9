@@ -11,16 +11,16 @@
 constexpr ESP_Brookesia_RecentsScreenSnapshotData_t ESP_BROOKESIA_PHONE_480_480_DARK_RECENTS_SCREEN_SNAPSHOT_DATA()
 {
     return {
-        .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(232, 276),
+        .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(248, 298),
         .title = {
-            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(232, 42),
-            .main_layout_column_pad = 8,
-            .icon_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(30),
+            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(248, 34),
+            .main_layout_column_pad = 0,
+            .icon_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(1),
             .text_font = ESP_BROOKESIA_STYLE_FONT_SIZE(18),
             .text_color = ESP_BROOKESIA_STYLE_COLOR(0xFFFFFF),
         },
         .image = {
-            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(232, 232),
+            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(248, 260),
             .radius = 18,
         },
     };

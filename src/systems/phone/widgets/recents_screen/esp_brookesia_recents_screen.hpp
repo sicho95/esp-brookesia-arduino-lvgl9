@@ -82,7 +82,7 @@ public:
 private:
     bool updateByNewData(void);
     void refreshSnapshotPresentation(void) const;
-    void applySnapshotPresentation(lv_obj_t *snapshot_main_obj, int relation) const;
+    void applySnapshotPresentation(lv_obj_t *snapshot_main_obj, int relation, int center_bias_x) const;
 
     static void onDataUpdateEventCallback(lv_event_t *event);
     static void onSnapshotTableScrollEventCallback(lv_event_t *event);
