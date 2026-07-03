@@ -99,6 +99,8 @@ bool ESP_Brookesia_RecentsScreen::begin(lv_obj_t *parent)
     // Trash
     lv_obj_add_style(trash_obj.get(), _core.getCoreHome().getCoreContainerStyle(), 0);
     lv_obj_clear_flag(trash_obj.get(), LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(trash_obj.get(), LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(trash_obj.get(), LV_OBJ_FLAG_PRESS_LOCK);
     // Transh icon
     lv_obj_center(trash_icon.get());
     lv_obj_add_style(trash_icon.get(), _core.getCoreHome().getCoreContainerStyle(), 0);
@@ -106,6 +108,10 @@ bool ESP_Brookesia_RecentsScreen::begin(lv_obj_t *parent)
     lv_image_set_inner_align(trash_icon.get(), LV_IMAGE_ALIGN_CENTER);
     lv_obj_add_flag(trash_icon.get(), LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(trash_icon.get(), LV_OBJ_FLAG_PRESS_LOCK);
+    lv_obj_add_event_cb(trash_obj.get(), onTrashTouchEventCallback, LV_EVENT_CLICKED, this);
+    lv_obj_add_event_cb(trash_obj.get(), onTrashTouchEventCallback, LV_EVENT_PRESSED, this);
+    lv_obj_add_event_cb(trash_obj.get(), onTrashTouchEventCallback, LV_EVENT_PRESS_LOST, this);
+    lv_obj_add_event_cb(trash_obj.get(), onTrashTouchEventCallback, LV_EVENT_RELEASED, this);
     lv_obj_add_event_cb(trash_icon.get(), onTrashTouchEventCallback, LV_EVENT_CLICKED, this);
     lv_obj_add_event_cb(trash_icon.get(), onTrashTouchEventCallback, LV_EVENT_PRESSED, this);
     lv_obj_add_event_cb(trash_icon.get(), onTrashTouchEventCallback, LV_EVENT_PRESS_LOST, this);
@@ -613,8 +619,8 @@ void ESP_Brookesia_RecentsScreen::onTrashTouchEventCallback(lv_event_t *event)
     case LV_EVENT_PRESSED:
         ESP_BROOKESIA_LOGD("Pressed");
         // Zoom out icon
-        lv_image_set_scale((lv_obj_t *)lv_event_get_target(event), recents_screen->_trash_icon_press_zoom);
-        lv_obj_refr_size((lv_obj_t *)lv_event_get_target(event));
+        lv_image_set_scale(recents_screen->_trash_icon.get(), recents_screen->_trash_icon_press_zoom);
+        lv_obj_refr_size(recents_screen->_trash_icon.get());
         recents_screen->_is_trash_pressed_losted = false;
         break;
     case LV_EVENT_PRESS_LOST:
@@ -624,8 +630,8 @@ void ESP_Brookesia_RecentsScreen::onTrashTouchEventCallback(lv_event_t *event)
     case LV_EVENT_RELEASED:
         ESP_BROOKESIA_LOGD("Released");
         // Zoom in icon
-        lv_image_set_scale((lv_obj_t *)lv_event_get_target(event), recents_screen->_trash_icon_default_zoom);
-        lv_obj_refr_size((lv_obj_t *)lv_event_get_target(event));
+        lv_image_set_scale(recents_screen->_trash_icon.get(), recents_screen->_trash_icon_default_zoom);
+        lv_obj_refr_size(recents_screen->_trash_icon.get());
         break;
     default:
         break;
