@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <climits>
 #include <cmath>
 #include "esp_brookesia_conf_internal.h"
 #if !ESP_BROOKESIA_CONF_PHONE_RECENTS_SCREEN_ENABLE_DEBUG_LOG
@@ -96,6 +97,8 @@ bool ESP_Brookesia_RecentsScreen::begin(lv_obj_t *parent)
     lv_obj_set_scrollbar_mode(snapshot_table.get(), LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_scroll_snap_x(snapshot_table.get(), LV_SCROLL_SNAP_CENTER);
     lv_obj_clear_flag(snapshot_table.get(), LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(snapshot_table.get(), onSnapshotTableScrollEventCallback, LV_EVENT_SCROLL, this);
+    lv_obj_add_event_cb(snapshot_table.get(), onSnapshotTableScrollEventCallback, LV_EVENT_SCROLL_END, this);
     // Trash
     lv_obj_add_style(trash_obj.get(), _core.getCoreHome().getCoreContainerStyle(), 0);
     lv_obj_clear_flag(trash_obj.get(), LV_OBJ_FLAG_SCROLLABLE);
@@ -203,6 +206,7 @@ bool ESP_Brookesia_RecentsScreen::addSnapshot(const ESP_Brookesia_RecentsScreenS
     }
 
     ESP_BROOKESIA_CHECK_FALSE_RETURN(scrollToSnapshotById(conf.id), false, "Scroll to snapshot failed");
+    refreshSnapshotPresentation();
 
     return true;
 }
@@ -215,6 +219,8 @@ bool ESP_Brookesia_RecentsScreen::removeSnapshot(int id)
 
     int num = _id_snapshot_map.erase(id);
     ESP_BROOKESIA_CHECK_FALSE_RETURN(num > 0, false, "Remove snapshot failed");
+
+    refreshSnapshotPresentation();
 
     return true;
 }
@@ -233,6 +239,7 @@ bool ESP_Brookesia_RecentsScreen::scrollToSnapshotById(int id)
     lv_obj_add_flag(_snapshot_table.get(), LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_scroll_to_view(snapshot_main_obj, _data.flags.enable_table_scroll_anim ? LV_ANIM_ON : LV_ANIM_OFF);
     lv_obj_clear_flag(_snapshot_table.get(), LV_OBJ_FLAG_SCROLLABLE);
+    refreshSnapshotPresentation();
 
     return true;
 }
@@ -253,6 +260,7 @@ bool ESP_Brookesia_RecentsScreen::scrollToSnapshotByIndex(uint8_t index)
     lv_obj_add_flag(_snapshot_table.get(), LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_scroll_to_view(snapshot_main_obj, _data.flags.enable_table_scroll_anim ? LV_ANIM_ON : LV_ANIM_OFF);
     lv_obj_clear_flag(_snapshot_table.get(), LV_OBJ_FLAG_SCROLLABLE);
+    refreshSnapshotPresentation();
 
     return true;
 }
@@ -280,6 +288,7 @@ bool ESP_Brookesia_RecentsScreen::updateSnapshotImage(int id)
     ESP_BROOKESIA_CHECK_FALSE_RETURN(checkSnapshotExist(id), false, "Snapshot is not exist");
 
     ESP_BROOKESIA_CHECK_FALSE_RETURN(_id_snapshot_map.at(id)->updateByNewData(), false, "Update snapshot style failed");
+    refreshSnapshotPresentation();
 
     return true;
 }
@@ -583,7 +592,140 @@ bool ESP_Brookesia_RecentsScreen::updateByNewData(void)
         ESP_BROOKESIA_CHECK_FALSE_RETURN(it.second->updateByNewData(), false, "Update snapshot object style failed");
     }
 
+    refreshSnapshotPresentation();
+
     return true;
+}
+
+void ESP_Brookesia_RecentsScreen::refreshSnapshotPresentation(void) const
+{
+    constexpr int far_threshold = 180;
+    int center_id = -1;
+    int left_id = -1;
+    int right_id = -1;
+    int best_center_dist = INT32_MAX;
+    int best_left_dist = INT32_MAX;
+    int best_right_dist = INT32_MAX;
+    lv_area_t table_area = {};
+
+    if (!checkInitialized() || _id_snapshot_map.empty()) {
+        return;
+    }
+
+    lv_obj_update_layout(_snapshot_table.get());
+    lv_obj_refr_pos(_snapshot_table.get());
+    lv_obj_get_coords(_snapshot_table.get(), &table_area);
+    const int table_center_x = (table_area.x1 + table_area.x2) / 2;
+
+    for (const auto &it : _id_snapshot_map) {
+        lv_obj_t *snapshot_main_obj = it.second != nullptr ? it.second->getMainObj() : nullptr;
+        lv_area_t snapshot_area = {};
+        int dist = 0;
+        int card_center_x = 0;
+
+        if (snapshot_main_obj == nullptr) {
+            continue;
+        }
+
+        lv_obj_update_layout(snapshot_main_obj);
+        lv_obj_refr_pos(snapshot_main_obj);
+        lv_obj_get_coords(snapshot_main_obj, &snapshot_area);
+        card_center_x = (snapshot_area.x1 + snapshot_area.x2) / 2;
+        dist = card_center_x - table_center_x;
+
+        if (abs(dist) < best_center_dist) {
+            best_center_dist = abs(dist);
+            center_id = it.first;
+        }
+        if ((dist < 0) && (abs(dist) < best_left_dist)) {
+            best_left_dist = abs(dist);
+            left_id = it.first;
+        }
+        if ((dist > 0) && (abs(dist) < best_right_dist)) {
+            best_right_dist = abs(dist);
+            right_id = it.first;
+        }
+    }
+
+    for (const auto &it : _id_snapshot_map) {
+        lv_obj_t *snapshot_main_obj = it.second != nullptr ? it.second->getMainObj() : nullptr;
+        lv_area_t snapshot_area = {};
+        int relation = 2;
+        int card_center_x = 0;
+        int dist = 0;
+
+        if (snapshot_main_obj == nullptr) {
+            continue;
+        }
+
+        lv_obj_get_coords(snapshot_main_obj, &snapshot_area);
+        card_center_x = (snapshot_area.x1 + snapshot_area.x2) / 2;
+        dist = card_center_x - table_center_x;
+
+        if (it.first == center_id) {
+            relation = 0;
+        } else if ((it.first == left_id) && (best_left_dist <= far_threshold)) {
+            relation = -1;
+        } else if ((it.first == right_id) && (best_right_dist <= far_threshold)) {
+            relation = 1;
+        } else if (abs(dist) <= far_threshold * 2) {
+            relation = (dist < 0) ? -2 : 2;
+        }
+
+        applySnapshotPresentation(snapshot_main_obj, relation);
+    }
+}
+
+void ESP_Brookesia_RecentsScreen::applySnapshotPresentation(lv_obj_t *snapshot_main_obj, int relation) const
+{
+    constexpr int scale_center = LV_SCALE_NONE;
+    constexpr int scale_side = LV_SCALE_NONE * 84 / 100;
+    constexpr int scale_far = LV_SCALE_NONE * 68 / 100;
+    constexpr int rotation_side = 140;
+    constexpr int rotation_far = 210;
+    constexpr int translate_side_x = 28;
+    constexpr int translate_side_y = 12;
+    constexpr int translate_far_x = 42;
+    constexpr int translate_far_y = 22;
+
+    ESP_BROOKESIA_CHECK_NULL_EXIT(snapshot_main_obj, "Invalid snapshot main object");
+
+    lv_obj_set_style_transform_pivot_x(snapshot_main_obj, lv_obj_get_width(snapshot_main_obj) / 2, 0);
+    lv_obj_set_style_transform_pivot_y(snapshot_main_obj, lv_obj_get_height(snapshot_main_obj) / 2, 0);
+
+    switch (relation) {
+    case 0:
+        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_center, 0);
+        lv_obj_set_style_transform_rotation(snapshot_main_obj, 0, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, 0, 0);
+        lv_obj_set_style_translate_y(snapshot_main_obj, 0, 0);
+        break;
+    case -1:
+        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_side, 0);
+        lv_obj_set_style_transform_rotation(snapshot_main_obj, rotation_side, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, translate_side_x, 0);
+        lv_obj_set_style_translate_y(snapshot_main_obj, translate_side_y, 0);
+        break;
+    case 1:
+        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_side, 0);
+        lv_obj_set_style_transform_rotation(snapshot_main_obj, -rotation_side, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, -translate_side_x, 0);
+        lv_obj_set_style_translate_y(snapshot_main_obj, translate_side_y, 0);
+        break;
+    case -2:
+        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_far, 0);
+        lv_obj_set_style_transform_rotation(snapshot_main_obj, rotation_far, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, translate_far_x, 0);
+        lv_obj_set_style_translate_y(snapshot_main_obj, translate_far_y, 0);
+        break;
+    case 2:
+    default:
+        lv_obj_set_style_transform_scale(snapshot_main_obj, scale_far, 0);
+        lv_obj_set_style_transform_rotation(snapshot_main_obj, -rotation_far, 0);
+        lv_obj_set_style_translate_x(snapshot_main_obj, -translate_far_x, 0);
+        lv_obj_set_style_translate_y(snapshot_main_obj, translate_far_y, 0);
+        break;
+    }
 }
 
 void ESP_Brookesia_RecentsScreen::onDataUpdateEventCallback(lv_event_t *event)
@@ -597,6 +739,19 @@ void ESP_Brookesia_RecentsScreen::onDataUpdateEventCallback(lv_event_t *event)
     ESP_BROOKESIA_CHECK_NULL_EXIT(recents_screen, "Invalid app snapshot_table object");
 
     ESP_BROOKESIA_CHECK_FALSE_EXIT(recents_screen->updateByNewData(), "Update object style failed");
+}
+
+void ESP_Brookesia_RecentsScreen::onSnapshotTableScrollEventCallback(lv_event_t *event)
+{
+    ESP_Brookesia_RecentsScreen *recents_screen = nullptr;
+
+    ESP_BROOKESIA_CHECK_NULL_EXIT(event, "Invalid event object");
+
+    recents_screen = (ESP_Brookesia_RecentsScreen *)lv_event_get_user_data(event);
+    ESP_BROOKESIA_CHECK_NULL_EXIT(recents_screen, "Invalid recents screen object");
+    ESP_BROOKESIA_CHECK_FALSE_EXIT(recents_screen->checkInitialized(), "Not initialized");
+
+    recents_screen->refreshSnapshotPresentation();
 }
 
 void ESP_Brookesia_RecentsScreen::onTrashTouchEventCallback(lv_event_t *event)
