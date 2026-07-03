@@ -23,6 +23,29 @@
 | esp-lib-utils   | 0.2.*       |
 | lvgl            | 9.2.*       |
 
+### Arduino IDE
+
+When using the Arduino examples in this fork:
+
+- Install this repository itself as an Arduino library under `Documents/Arduino/libraries/esp-brookesia-arduino-lvgl9`.
+- Do not compile the examples only from a random unzip location; otherwise Arduino may fail on `#include <esp_brookesia.hpp>`.
+- Install dependent libraries from the Arduino IDE Library Manager.
+
+For the generic `examples/arduino/Phone` sketch, install:
+
+- `ESP32_Display_Panel`
+- `ESP32_IO_Expander`
+- `esp-lib-utils`
+- `lvgl`
+
+For the Waveshare-specific `examples/arduino/Phone_Waveshare_CO5300_CST9220` sketch, install:
+
+- `lvgl`
+- `GFX Library for Arduino`
+- `SensorLib`
+
+The Waveshare sketch does not use `ESP32_Display_Panel` or `ESP32_IO_Expander`.
+
 ## Adding to Project
 
 esp-brookesia has been uploaded to the [Espressif Component Registry](https://components.espressif.com/), and users can add it to their project using the `idf.py add-dependency` command, for example:

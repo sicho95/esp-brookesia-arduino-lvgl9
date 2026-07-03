@@ -8,6 +8,7 @@ The example is suitable for touchscreens with a resolution of `240 x 240` or hig
 
 To use this example, please firstly install the following dependent libraries:
 
+- esp-brookesia-arduino-lvgl9 (this repository, installed as an Arduino library under `Documents/Arduino/libraries`)
 - GFX Library for Arduino
 - SensorLib
 - lvgl (>= v9.0, < v10)
@@ -16,6 +17,7 @@ Then, follow the steps below to configure the libraries and upload the example:
 
 1. For **esp-brookesia**:
 
+    - Install this repository under `Documents/Arduino/libraries/esp-brookesia-arduino-lvgl9`, otherwise Arduino will fail on `#include <esp_brookesia.hpp>`.
     - [optional] Follow the [steps](../../../docs/how_to_use.md#configuration-instructions-1) to configure the library.
 
 2. For **lvgl**:
