@@ -81,8 +81,11 @@ public:
 
 private:
     bool updateByNewData(void);
+    void refreshSnapshotPresentation(void) const;
+    void applySnapshotPresentation(lv_obj_t *snapshot_main_obj, int relation) const;
 
     static void onDataUpdateEventCallback(lv_event_t *event);
+    static void onSnapshotTableScrollEventCallback(lv_event_t *event);
     static void onTrashTouchEventCallback(lv_event_t *event);
 
     ESP_Brookesia_Core &_core;
