@@ -11,17 +11,17 @@
 constexpr ESP_Brookesia_RecentsScreenSnapshotData_t ESP_BROOKESIA_PHONE_480_480_DARK_RECENTS_SCREEN_SNAPSHOT_DATA()
 {
     return {
-        .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(300, 352),
+        .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(272, 320),
         .title = {
-            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(300, 52),
-            .main_layout_column_pad = 10,
-            .icon_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(36),
-            .text_font = ESP_BROOKESIA_STYLE_FONT_SIZE(22),
+            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(272, 48),
+            .main_layout_column_pad = 8,
+            .icon_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(32),
+            .text_font = ESP_BROOKESIA_STYLE_FONT_SIZE(20),
             .text_color = ESP_BROOKESIA_STYLE_COLOR(0xFFFFFF),
         },
         .image = {
-            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(300, 300),
-            .radius = 20,
+            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(272, 272),
+            .radius = 18,
         },
     };
 }
@@ -45,13 +45,13 @@ constexpr ESP_Brookesia_RecentsScreenData_t ESP_BROOKESIA_PHONE_480_480_DARK_REC
         },
         .snapshot_table = {
             .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT_PERCENT(100, 100),
-            .main_layout_column_pad = 40,
+            .main_layout_column_pad = 28,
             .snapshot = ESP_BROOKESIA_PHONE_480_480_DARK_RECENTS_SCREEN_SNAPSHOT_DATA(),
         },
         .trash_icon = {
-            .default_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(48),
-            .press_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(43),
-            .image = ESP_BROOKESIA_STYLE_IMAGE(&esp_brookesia_image_middle_recents_screen_trash_48_48),
+            .default_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(64),
+            .press_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(58),
+            .image = ESP_BROOKESIA_STYLE_IMAGE(&esp_brookesia_image_large_recents_screen_trash_64_64),
         },
         .flags = {
             .enable_memory = 1,
