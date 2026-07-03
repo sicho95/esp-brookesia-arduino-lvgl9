@@ -11,16 +11,16 @@
 constexpr ESP_Brookesia_RecentsScreenSnapshotData_t ESP_BROOKESIA_PHONE_480_480_DARK_RECENTS_SCREEN_SNAPSHOT_DATA()
 {
     return {
-        .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(248, 292),
+        .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(232, 276),
         .title = {
-            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(248, 44),
+            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(232, 42),
             .main_layout_column_pad = 8,
             .icon_size = ESP_BROOKESIA_STYLE_SIZE_SQUARE(30),
             .text_font = ESP_BROOKESIA_STYLE_FONT_SIZE(18),
             .text_color = ESP_BROOKESIA_STYLE_COLOR(0xFFFFFF),
         },
         .image = {
-            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(248, 248),
+            .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT(232, 232),
             .radius = 18,
         },
     };
@@ -45,7 +45,7 @@ constexpr ESP_Brookesia_RecentsScreenData_t ESP_BROOKESIA_PHONE_480_480_DARK_REC
         },
         .snapshot_table = {
             .main_size = ESP_BROOKESIA_STYLE_SIZE_RECT_PERCENT(100, 100),
-            .main_layout_column_pad = 20,
+            .main_layout_column_pad = 12,
             .snapshot = ESP_BROOKESIA_PHONE_480_480_DARK_RECENTS_SCREEN_SNAPSHOT_DATA(),
         },
         .trash_icon = {
