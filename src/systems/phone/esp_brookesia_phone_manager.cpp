@@ -448,6 +448,7 @@ void ESP_Brookesia_PhoneManager::onAppLauncherGestureEventCallback(lv_event_t *e
 
     manager = static_cast<ESP_Brookesia_PhoneManager *>(lv_event_get_user_data(event));
     ESP_BROOKESIA_CHECK_NULL_GOTO(manager, end, "Invalid manager");
+    if (manager->_flags.is_system_overlay_visible) return;
     gesture = manager->_gesture.get();
     ESP_BROOKESIA_CHECK_NULL_GOTO(gesture, end, "Invalid gesture");
     recents_screen = manager->home._recents_screen.get();
@@ -522,6 +523,7 @@ void ESP_Brookesia_PhoneManager::onNavigationBarGestureEventCallback(lv_event_t 
 
     manager = static_cast<ESP_Brookesia_PhoneManager *>(lv_event_get_user_data(event));
     ESP_BROOKESIA_CHECK_NULL_EXIT(manager, "Invalid manager");
+    if (manager->_flags.is_system_overlay_visible) return;
     navigation_bar = manager->home.getNavigationBar();
     ESP_BROOKESIA_CHECK_NULL_EXIT(navigation_bar, "Invalid navigation bar");
     event_code = lv_event_get_code(event);
@@ -614,6 +616,10 @@ bool ESP_Brookesia_PhoneManager::processNavigationEvent(ESP_Brookesia_CoreNaviga
             ESP_BROOKESIA_LOGW("Recents screen is disabled");
             goto end;
         }
+        if ((active_app == nullptr) && !recents_screen->hasSnapshots()) {
+            ESP_BROOKESIA_LOGD("No paused app: keep launcher visible instead of opening empty recents");
+            goto end;
+        }
         // Save the active app and pause it
         if (active_app != nullptr) {
             ret = processAppPause(active_app);
@@ -621,6 +627,15 @@ bool ESP_Brookesia_PhoneManager::processNavigationEvent(ESP_Brookesia_CoreNaviga
         }
         _recents_screen_pause_app = active_app;
         // Show recents_screen
+        if (!recents_screen->hasSnapshots()) {
+            ESP_BROOKESIA_LOGD("No recents snapshot available after pause");
+            ESP_BROOKESIA_CHECK_FALSE_GOTO(
+                ret = processHomeScreenChange(ESP_BROOKESIA_PHONE_MANAGER_SCREEN_MAIN, nullptr), end,
+                "Return to launcher failed"
+            );
+            resetActiveApp();
+            goto end;
+        }
         ESP_BROOKESIA_CHECK_FALSE_GOTO(ret = processRecentsScreenShow(), end, "Process recents_screen show failed");
         // Get the active app for recents screen, if the active app is not set, set the last app as the active app
         _recents_screen_active_app = active_app != nullptr ? active_app : getRunningAppByIdenx(getRunningAppCount() - 1);
@@ -661,6 +676,7 @@ void ESP_Brookesia_PhoneManager::onGestureNavigationPressingEventCallback(lv_eve
 
     manager = static_cast<ESP_Brookesia_PhoneManager *>(lv_event_get_user_data(event));
     ESP_BROOKESIA_CHECK_NULL_EXIT(manager, "Invalid manager");
+    if (manager->_flags.is_system_overlay_visible) return;
     // Check if the gesture is released and enabled
     if (!manager->_flags.enable_gesture_navigation || manager->_flags.is_gesture_navigation_disabled) {
         return;
@@ -703,6 +719,7 @@ void ESP_Brookesia_PhoneManager::onGestureNavigationReleaseEventCallback(lv_even
     manager = static_cast<ESP_Brookesia_PhoneManager *>(lv_event_get_user_data(event));
     ESP_BROOKESIA_CHECK_NULL_EXIT(manager, "Invalid manager");
     manager->_flags.is_gesture_navigation_disabled = false;
+    if (manager->_flags.is_system_overlay_visible) return;
     active_app = static_cast<ESP_Brookesia_PhoneApp *>(manager->getActiveApp());
     // Check if the gesture is released and enabled
     if (!manager->_flags.enable_gesture_navigation) {
@@ -746,6 +763,7 @@ void ESP_Brookesia_PhoneManager::onGestureMaskIndicatorPressingEventCallback(lv_
 
     manager = static_cast<ESP_Brookesia_PhoneManager *>(lv_event_get_user_data(event));
     ESP_BROOKESIA_CHECK_NULL_EXIT(manager, "Invalid manager");
+    if (manager->_flags.is_system_overlay_visible) return;
     gesture = manager->getGesture();
     ESP_BROOKESIA_CHECK_NULL_EXIT(gesture, "Invalid gesture");
     gesture_info = (ESP_Brookesia_GestureInfo_t *)lv_event_get_param(event);

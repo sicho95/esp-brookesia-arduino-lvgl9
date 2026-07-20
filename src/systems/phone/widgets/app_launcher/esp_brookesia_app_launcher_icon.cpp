@@ -140,6 +140,22 @@ bool ESP_Brookesia_AppLauncherIcon::toggleClickable(bool clickable)
     return true;
 }
 
+bool ESP_Brookesia_AppLauncherIcon::setSelected(bool selected)
+{
+    ESP_BROOKESIA_CHECK_FALSE_RETURN(checkInitialized(), false, "Icon is not initialized");
+
+    /* Transform the full icon block instead of changing the grid cell. This
+     * enlarges both image and title while keeping table geometry stable. */
+    lv_obj_set_style_border_width(_icon_main_obj.get(), 0, 0);
+    lv_obj_set_style_bg_opa(_icon_main_obj.get(), LV_OPA_TRANSP, 0);
+    lv_image_set_scale(_icon_image_obj.get(), _image_default_zoom);
+    lv_obj_add_flag(_main_obj.get(), LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    lv_obj_set_style_transform_pivot_x(_main_obj.get(), lv_obj_get_width(_main_obj.get()) / 2, 0);
+    lv_obj_set_style_transform_pivot_y(_main_obj.get(), lv_obj_get_height(_main_obj.get()) / 2, 0);
+    lv_obj_set_style_transform_scale(_main_obj.get(), selected ? (LV_SCALE_NONE * 115) / 100 : LV_SCALE_NONE, 0);
+    return true;
+}
+
 bool ESP_Brookesia_AppLauncherIcon::updateByNewData(void)
 {
     float h_factor = 0;

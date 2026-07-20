@@ -65,6 +65,7 @@ public:
 
     bool checkInitialized(void) const   { return _main_obj != nullptr; }
     bool checkSnapshotExist(int id) const;
+    bool hasSnapshots(void) const { return !_id_snapshot_map.empty(); }
     bool checkVisible(void) const;
     bool checkPointInsideMain(lv_point_t &point) const;
     bool checkPointInsideTable(lv_point_t &point) const;

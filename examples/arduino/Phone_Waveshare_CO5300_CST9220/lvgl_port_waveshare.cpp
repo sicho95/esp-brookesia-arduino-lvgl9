@@ -5,6 +5,7 @@
  */
 #include "lvgl_port_waveshare.h"
 
+#include <lvgl_private.h>
 #include <Arduino_GFX_Library.h>
 #include <SensorLib.h>
 #include <TouchDrv.hpp>
@@ -34,6 +35,9 @@ static void *lvgl_buf[2] = {};
 static void *lvgl_rotation_buf = nullptr;
 static lv_display_t *lvgl_display = nullptr;
 static lv_indev_t *lvgl_touch = nullptr;
+static uint8_t lcd_brightness_percent = 78;
+static bool lcd_powered = true;
+static lv_display_rotation_t display_rotation = WAVESHARE_DISPLAY_ROTATION;
 
 static void IRAM_ATTR touch_irq_cb()
 {
@@ -78,7 +82,7 @@ static bool lcd_init()
 
     lcd->setRotation(0);
     lcd->displayOn();
-    lcd->setBrightness(200);
+    lcd->setBrightness((uint8_t)((255U * lcd_brightness_percent) / 100U));
     lcd->fillScreen(0x0000);
     ESP_LOGI(TAG, "CO5300 OK %dx%d", WAVESHARE_LCD_WIDTH, WAVESHARE_LCD_HEIGHT);
     return true;
@@ -173,7 +177,7 @@ static void rotate_touch_point(uint16_t raw_x, uint16_t raw_y, lv_point_t *point
     raw_x = constrain(raw_x, 0, WAVESHARE_LCD_WIDTH - 1);
     raw_y = constrain(raw_y, 0, WAVESHARE_LCD_HEIGHT - 1);
 
-    switch (WAVESHARE_DISPLAY_ROTATION) {
+    switch (display_rotation) {
     case LV_DISPLAY_ROTATION_90:
         point->x = raw_y;
         point->y = WAVESHARE_LCD_WIDTH - 1 - raw_x;
@@ -194,20 +198,29 @@ static void rotate_touch_point(uint16_t raw_x, uint16_t raw_y, lv_point_t *point
     }
 }
 
+static void draw_bitmap(int16_t x, int16_t y, const uint16_t *pixels, int16_t width, int16_t height)
+{
+    /* Arduino_GFX only uses the non-const overload for its contiguous QSPI
+     * transfer. The display driver does not modify the LVGL buffer. */
+    lcd->draw16bitRGBBitmap(x, y, const_cast<uint16_t *>(pixels), width, height);
+}
+
 static void flush_rotated(const lv_area_t *area, const uint16_t *src)
 {
     const int32_t src_w = area->x2 - area->x1 + 1;
     const int32_t src_h = area->y2 - area->y1 + 1;
     uint16_t *dst = reinterpret_cast<uint16_t *>(lvgl_rotation_buf);
 
-    switch (WAVESHARE_DISPLAY_ROTATION) {
+    switch (display_rotation) {
     case LV_DISPLAY_ROTATION_90:
-        for (int32_t y = 0; y < src_h; y++) {
-            for (int32_t x = 0; x < src_w; x++) {
+        /* Iterate columns first: consecutive writes remain adjacent in the
+         * PSRAM rotation buffer. This matters for a 480x480 FULL refresh. */
+        for (int32_t x = 0; x < src_w; x++) {
+            for (int32_t y = 0; y < src_h; y++) {
                 dst[(x * src_h) + (src_h - 1 - y)] = src[(y * src_w) + x];
             }
         }
-        lcd->draw16bitRGBBitmap(
+        draw_bitmap(
             WAVESHARE_LCD_HEIGHT - 1 - area->y2,
             area->x1,
             dst,
@@ -222,7 +235,7 @@ static void flush_rotated(const lv_area_t *area, const uint16_t *src)
                 dst[((src_h - 1 - y) * src_w) + (src_w - 1 - x)] = src[(y * src_w) + x];
             }
         }
-        lcd->draw16bitRGBBitmap(
+        draw_bitmap(
             WAVESHARE_LCD_WIDTH - 1 - area->x2,
             WAVESHARE_LCD_HEIGHT - 1 - area->y2,
             dst,
@@ -232,12 +245,12 @@ static void flush_rotated(const lv_area_t *area, const uint16_t *src)
         break;
 
     case LV_DISPLAY_ROTATION_270:
-        for (int32_t y = 0; y < src_h; y++) {
-            for (int32_t x = 0; x < src_w; x++) {
+        for (int32_t x = 0; x < src_w; x++) {
+            for (int32_t y = 0; y < src_h; y++) {
                 dst[((src_w - 1 - x) * src_h) + y] = src[(y * src_w) + x];
             }
         }
-        lcd->draw16bitRGBBitmap(
+        draw_bitmap(
             area->y1,
             WAVESHARE_LCD_WIDTH - 1 - area->x2,
             dst,
@@ -248,7 +261,7 @@ static void flush_rotated(const lv_area_t *area, const uint16_t *src)
 
     case LV_DISPLAY_ROTATION_0:
     default:
-        lcd->draw16bitRGBBitmap(area->x1, area->y1, src, src_w, src_h);
+        draw_bitmap(area->x1, area->y1, src, src_w, src_h);
         break;
     }
 }
@@ -257,8 +270,8 @@ static void flush_callback(lv_display_t *display, const lv_area_t *area, uint8_t
 {
     if (lcd != nullptr) {
         const uint16_t *src = reinterpret_cast<uint16_t *>(px_map);
-        if (WAVESHARE_DISPLAY_ROTATION == LV_DISPLAY_ROTATION_0 || lvgl_rotation_buf == nullptr) {
-            lcd->draw16bitRGBBitmap(
+        if (display_rotation == LV_DISPLAY_ROTATION_0 || lvgl_rotation_buf == nullptr) {
+            draw_bitmap(
                 area->x1,
                 area->y1,
                 src,
@@ -285,15 +298,15 @@ static lv_display_t *display_init()
         }
     }
 
-    if (WAVESHARE_DISPLAY_ROTATION != LV_DISPLAY_ROTATION_0) {
-        lvgl_rotation_buf = heap_caps_malloc(BUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (lvgl_rotation_buf == nullptr) {
-            lvgl_rotation_buf = heap_caps_malloc(BUFFER_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        }
-        if (lvgl_rotation_buf == nullptr) {
-            ESP_LOGE(TAG, "Allocate LVGL rotation buffer failed");
-            return nullptr;
-        }
+    /* Auto-rotation can change at runtime, so keep this buffer available even
+     * when the initial orientation is 0 degrees. */
+    lvgl_rotation_buf = heap_caps_malloc(BUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (lvgl_rotation_buf == nullptr) {
+        lvgl_rotation_buf = heap_caps_malloc(BUFFER_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (lvgl_rotation_buf == nullptr) {
+        ESP_LOGE(TAG, "Allocate LVGL rotation buffer failed");
+        return nullptr;
     }
 
     lv_display_t *display = lv_display_create(WAVESHARE_LCD_WIDTH, WAVESHARE_LCD_HEIGHT);
@@ -472,4 +485,70 @@ lv_display_t *lvgl_port_get_display(void)
 lv_indev_t *lvgl_port_get_touch(void)
 {
     return lvgl_touch;
+}
+
+bool lvgl_port_set_display_power(bool enabled)
+{
+    if (lcd == nullptr) {
+        return false;
+    }
+    if (enabled) {
+        lcd->displayOn();
+        lcd->setBrightness((uint8_t)((255U * lcd_brightness_percent) / 100U));
+    } else {
+        lcd->displayOff();
+    }
+    lcd_powered = enabled;
+    return true;
+}
+
+bool lvgl_port_set_brightness(uint8_t percent)
+{
+    if (lcd == nullptr) {
+        return false;
+    }
+    lcd_brightness_percent = constrain(percent, 1, 100);
+    if (lcd_powered) {
+        lcd->setBrightness((uint8_t)((255U * lcd_brightness_percent) / 100U));
+    }
+    return true;
+}
+
+uint8_t lvgl_port_get_brightness(void)
+{
+    return lcd_brightness_percent;
+}
+
+bool lvgl_port_set_rotation(lv_display_rotation_t rotation)
+{
+    if (rotation > LV_DISPLAY_ROTATION_270) {
+        return false;
+    }
+    if (display_rotation == rotation) {
+        return true;
+    }
+    display_rotation = rotation;
+
+    /* CO5300 has no true quarter-turn mode. Keeping the panel in its native
+     * coordinate system prevents the MADCTL flip from mirroring the logical
+     * 180-degree view; all four rotations are composed in the flush callback. */
+    if (lcd != nullptr) {
+        lcd->setRotation(0);
+    }
+    if (lvgl_display != nullptr) {
+        /* Drop any in-flight touch state before remapping physical points to
+         * the newly rotated logical display. */
+        if (lvgl_touch != nullptr) lv_indev_reset(lvgl_touch, nullptr);
+        lv_area_t full = {0, 0, WAVESHARE_LCD_WIDTH - 1, WAVESHARE_LCD_HEIGHT - 1};
+        lv_inv_area(lvgl_display, &full);
+        lv_timer_t *refresh_timer = lv_display_get_refr_timer(lvgl_display);
+        if (refresh_timer != nullptr) lv_timer_ready(refresh_timer);
+    }
+    ESP_LOGI(TAG, "Software rotation %d", rotation);
+    return true;
+}
+
+lv_display_rotation_t lvgl_port_get_rotation(void)
+{
+    return display_rotation;
 }

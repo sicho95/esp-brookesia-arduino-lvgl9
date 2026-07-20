@@ -131,6 +131,16 @@ end:
     return true;
 }
 
+bool ESP_Brookesia_StatusBarIcon::setColor(lv_color_t color, lv_opa_t opacity)
+{
+    ESP_BROOKESIA_CHECK_NULL_RETURN(_main_obj, false, "Invalid main object");
+    for (auto &image_obj : _image_objs) {
+        lv_obj_set_style_image_recolor(image_obj.get(), color, 0);
+        lv_obj_set_style_image_recolor_opa(image_obj.get(), opacity, 0);
+    }
+    return true;
+}
+
 bool ESP_Brookesia_StatusBarIcon::updateByNewData(void)
 {
     int image_resource_num = _image_objs.size();

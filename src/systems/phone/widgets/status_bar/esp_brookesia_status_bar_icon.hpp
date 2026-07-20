@@ -32,8 +32,10 @@ public:
     bool begin(const ESP_Brookesia_Core &core, lv_obj_t *parent);
     bool del(void);
     bool setCurrentState(int state);
+    bool setColor(lv_color_t color, lv_opa_t opacity = LV_OPA_COVER);
 
     bool checkInitialized(void) const { return (_main_obj != nullptr); }
+    lv_obj_t *getMainObj(void) const { return _main_obj.get(); }
 
     bool updateByNewData(void);
 

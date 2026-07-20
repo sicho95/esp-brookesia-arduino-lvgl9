@@ -41,7 +41,6 @@
  */
 #define LVGL_PORT_RENDER_MODE          LV_DISPLAY_RENDER_MODE_FULL
 #define LVGL_PORT_BUFFER_LINES         ((LVGL_PORT_RENDER_MODE == LV_DISPLAY_RENDER_MODE_FULL) ? WAVESHARE_LCD_HEIGHT : 20)
-
 /*
  * The CO5300 driver used by Arduino_GFX does not expose a reliable 90/270
  * hardware rotation path on this panel. Keep the LCD at rotation 0 and rotate
@@ -58,6 +57,11 @@ bool lvgl_port_lock(int timeout_ms);
 bool lvgl_port_unlock(void);
 lv_display_t *lvgl_port_get_display(void);
 lv_indev_t *lvgl_port_get_touch(void);
+bool lvgl_port_set_display_power(bool enabled);
+bool lvgl_port_set_brightness(uint8_t percent);
+uint8_t lvgl_port_get_brightness(void);
+bool lvgl_port_set_rotation(lv_display_rotation_t rotation);
+lv_display_rotation_t lvgl_port_get_rotation(void);
 
 #ifdef __cplusplus
 }

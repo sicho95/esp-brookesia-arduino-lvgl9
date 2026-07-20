@@ -108,12 +108,22 @@ public:
     // Wifi
     bool setWifiIconState(int state) const;
     bool setWifiIconState(WifiState state) const;
+    bool setWifiIconColor(lv_color_t color, lv_opa_t opacity = LV_OPA_COVER) const;
     // Clock
     bool setClockFormat(ClockFormat format) const;
     bool setClock(int hour, int min, bool is_pm) const;
     bool setClock(int hour, int min) const;
 
     bool checkVisible(void) const;
+    lv_obj_t *getMainObj(void) const { return _main_obj.get(); }
+    lv_obj_t *getAreaObj(uint8_t index) const
+    {
+        return index < _area_objs.size() ? _area_objs[index].get() : nullptr;
+    }
+    lv_obj_t *getBatteryLabelObj(void) const { return _battery_label.get(); }
+    lv_obj_t *getBatteryIconObj(void) const { return getIconObj(_battery_id); }
+    lv_obj_t *getWifiIconObj(void) const { return getIconObj(_wifi_id); }
+    lv_obj_t *getIconObj(int id) const;
 
     static bool calibrateIconData(const ESP_Brookesia_StatusBarData_t &bar_data, const ESP_Brookesia_CoreHome &home,
                                   ESP_Brookesia_StatusBarIconData_t &icon_data);

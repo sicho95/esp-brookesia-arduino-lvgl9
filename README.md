@@ -23,7 +23,10 @@ Arduino IDE setup notes:
   - `lvgl`
   - `GFX Library for Arduino`
   - `SensorLib`
+  - `XPowersLib` (AXP2101 battery, charging and power-service support)
 - `ESP32_Display_Panel` and `ESP32_IO_Expander` are not used by the Waveshare sketch itself, but they remain dependencies for the generic Arduino examples and for the library metadata.
+
+The Waveshare example includes an optional device-services layer: top-edge control centre, notifications and scheduled jobs, QMI8658 automatic rotation, physical-key launcher navigation, NTP, status indicators, persisted brightness/radio preferences, a one-minute user-idle display-off policy, display leases for foreground apps, and a bounded 1S LiPo charging profile. It intentionally does **not** enter raw ESP32 deep sleep yet: the PWR/PMU wake wiring and wake sources must be verified on the physical board first, otherwise an automatic deep-sleep test can make the device appear dead. The AXP2101 temperature is the PMU die temperature, not a cell temperature; an external battery NTC remains necessary for true cell thermal protection. The validated CO5300 rotation pipeline and its Arduino_GFX QSPI performance constraint are documented in [PORTING_LVGL9.md](./PORTING_LVGL9.md).
 
 Upstream references:
 

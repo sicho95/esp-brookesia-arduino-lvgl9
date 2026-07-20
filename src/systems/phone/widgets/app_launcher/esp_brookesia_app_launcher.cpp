@@ -29,6 +29,7 @@ ESP_Brookesia_AppLauncher::ESP_Brookesia_AppLauncher(ESP_Brookesia_Core &core, c
     _core(core),
     _data(data),
     _table_current_page_index(-1),
+    _selected_icon_id(-1),
     _table_page_icon_count_max(0),
     _table_page_pad_row(0),
     _table_page_pad_column(0),
@@ -289,6 +290,113 @@ bool ESP_Brookesia_AppLauncher::scrollToLeftPage(void)
     );
 
     return scrollToPage(next_page_index);
+}
+
+int ESP_Brookesia_AppLauncher::getPageBoundaryIcon(uint8_t page_index, bool last) const
+{
+    int result = -1;
+    for (const auto &entry : _id_mix_icon_map) {
+        if (entry.second.current_page_index != page_index) {
+            continue;
+        }
+        result = entry.first;
+        if (!last) {
+            break;
+        }
+    }
+    return result;
+}
+
+bool ESP_Brookesia_AppLauncher::selectIcon(int id)
+{
+    auto next = _id_mix_icon_map.find(id);
+    ESP_BROOKESIA_CHECK_FALSE_RETURN(next != _id_mix_icon_map.end(), false, "Icon not found");
+
+    if (_selected_icon_id == id) {
+        return true;
+    }
+    auto previous = _id_mix_icon_map.find(_selected_icon_id);
+    if (previous != _id_mix_icon_map.end()) {
+        previous->second.icon->setSelected(false);
+    }
+    ESP_BROOKESIA_CHECK_FALSE_RETURN(next->second.icon->setSelected(true), false, "Select icon failed");
+    _selected_icon_id = id;
+    return true;
+}
+
+bool ESP_Brookesia_AppLauncher::selectNextIcon(void)
+{
+    ESP_BROOKESIA_CHECK_FALSE_RETURN(checkInitialized(), false, "Not initialized");
+    if (_selected_icon_id < 0) {
+        for (uint8_t page = 0; page < _mix_objs.size(); page++) {
+            const int first_id = getPageBoundaryIcon(page, false);
+            if (first_id >= 0) {
+                ESP_BROOKESIA_CHECK_FALSE_RETURN(scrollToPage(page), false, "Scroll to first page failed");
+                return selectIcon(first_id);
+            }
+        }
+        return false;
+    }
+    int next_id = -1;
+    for (const auto &entry : _id_mix_icon_map) {
+        if (entry.second.current_page_index == _table_current_page_index && entry.first > _selected_icon_id) {
+            next_id = entry.first;
+            break;
+        }
+    }
+    if (next_id < 0) {
+        const int next_page = _table_current_page_index + 1;
+        if (next_page < (int)_mix_objs.size()) {
+            ESP_BROOKESIA_CHECK_FALSE_RETURN(scrollToPage(next_page), false, "Scroll to next page failed");
+            next_id = getPageBoundaryIcon(next_page, false);
+        } else {
+            next_id = getPageBoundaryIcon(_table_current_page_index, false);
+        }
+    }
+    return next_id >= 0 && selectIcon(next_id);
+}
+
+bool ESP_Brookesia_AppLauncher::selectPreviousIcon(void)
+{
+    ESP_BROOKESIA_CHECK_FALSE_RETURN(checkInitialized(), false, "Not initialized");
+    if (_selected_icon_id < 0) {
+        for (int page = (int)_mix_objs.size() - 1; page >= 0; page--) {
+            const int last_id = getPageBoundaryIcon(page, true);
+            if (last_id >= 0) {
+                ESP_BROOKESIA_CHECK_FALSE_RETURN(scrollToPage(page), false, "Scroll to last page failed");
+                return selectIcon(last_id);
+            }
+        }
+        return false;
+    }
+    int previous_id = -1;
+    for (const auto &entry : _id_mix_icon_map) {
+        if (entry.second.current_page_index == _table_current_page_index && entry.first < _selected_icon_id) {
+            previous_id = entry.first;
+        }
+    }
+    if (previous_id < 0) {
+        const int previous_page = _table_current_page_index - 1;
+        if (previous_page >= 0) {
+            ESP_BROOKESIA_CHECK_FALSE_RETURN(scrollToPage(previous_page), false, "Scroll to previous page failed");
+            previous_id = getPageBoundaryIcon(previous_page, true);
+        } else {
+            previous_id = getPageBoundaryIcon(_table_current_page_index, true);
+        }
+    }
+    return previous_id >= 0 && selectIcon(previous_id);
+}
+
+bool ESP_Brookesia_AppLauncher::startSelectedIcon(void)
+{
+    ESP_BROOKESIA_CHECK_FALSE_RETURN(checkInitialized(), false, "Not initialized");
+    if (_selected_icon_id < 0) {
+        ESP_BROOKESIA_CHECK_FALSE_RETURN(selectNextIcon(), false, "Select first icon failed");
+    }
+    ESP_Brookesia_CoreAppEventData_t event_data = {};
+    event_data.id = _selected_icon_id;
+    event_data.type = ESP_BROOKESIA_CORE_APP_EVENT_TYPE_START;
+    return _core.sendAppEvent(&event_data);
 }
 
 bool ESP_Brookesia_AppLauncher::checkVisible(void) const

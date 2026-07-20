@@ -168,6 +168,12 @@ bool ESP_Brookesia_StatusBar::setIconState(int id, int state) const
     return true;
 }
 
+lv_obj_t *ESP_Brookesia_StatusBar::getIconObj(int id) const
+{
+    auto icon = _id_icon_map.find(id);
+    return icon != _id_icon_map.end() && icon->second != nullptr ? icon->second->getMainObj() : nullptr;
+}
+
 bool ESP_Brookesia_StatusBar::checkVisible(void) const
 {
     ESP_BROOKESIA_CHECK_FALSE_RETURN(checkMainInitialized(), false, "Not initialized");
@@ -548,6 +554,14 @@ bool ESP_Brookesia_StatusBar::setWifiIconState(WifiState state) const
     );
 
     return true;
+}
+
+bool ESP_Brookesia_StatusBar::setWifiIconColor(lv_color_t color, lv_opa_t opacity) const
+{
+    auto icon = _id_icon_map.find(_wifi_id);
+    ESP_BROOKESIA_CHECK_FALSE_RETURN(icon != _id_icon_map.end() && icon->second != nullptr, false,
+                                     "Wifi icon not found");
+    return icon->second->setColor(color, opacity);
 }
 
 bool ESP_Brookesia_StatusBar::beginClock(void)

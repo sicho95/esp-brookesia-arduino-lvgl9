@@ -49,6 +49,9 @@ public:
     bool scrollToPage(uint8_t index);
     bool scrollToRightPage(void);
     bool scrollToLeftPage(void);
+    bool selectNextIcon(void);
+    bool selectPreviousIcon(void);
+    bool startSelectedIcon(void);
 
     bool checkInitialized(void) const        { return (_main_obj != nullptr); }
     bool checkTableFull(uint8_t page_index) const;
@@ -80,6 +83,8 @@ private:
     bool toggleCurrentPageIconClickable(bool clickable);
     bool updateActiveSpot(void);
     bool updateByNewData(void);
+    bool selectIcon(int id);
+    int getPageBoundaryIcon(uint8_t page_index, bool last) const;
 
     static void onDataUpdateEventCallback(lv_event_t *event);
     static void onPageTouchEventCallback(lv_event_t *event);
@@ -89,6 +94,7 @@ private:
     const ESP_Brookesia_AppLauncherData_t &_data;
 
     int _table_current_page_index;
+    int _selected_icon_id;
     uint8_t _table_page_icon_count_max;
     int _table_page_pad_row;
     int _table_page_pad_column;

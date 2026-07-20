@@ -47,6 +47,7 @@ public:
 
     bool checkInitialized(void) const   { return _flags.is_initialized; }
     ESP_Brookesia_Gesture *getGesture(void)    { return _gesture.get(); }
+    void setSystemOverlayVisible(bool visible) { _flags.is_system_overlay_visible = visible; }
 
     static bool calibrateData(const ESP_Brookesia_StyleSize_t screen_size, ESP_Brookesia_PhoneHome &home,
                               ESP_Brookesia_PhoneManagerData_t &data);
@@ -103,6 +104,7 @@ private:
         uint8_t enable_gesture_navigation_home: 1;
         uint8_t enable_gesture_navigation_recents_app: 1;
         uint8_t is_gesture_navigation_disabled: 1;
+        uint8_t is_system_overlay_visible: 1;
         uint8_t enable_gesture_show_mask_left_right_edge: 1;
         uint8_t enable_gesture_show_mask_bottom_edge: 1;
         uint8_t enable_gesture_show_left_right_indicator_bar: 1;

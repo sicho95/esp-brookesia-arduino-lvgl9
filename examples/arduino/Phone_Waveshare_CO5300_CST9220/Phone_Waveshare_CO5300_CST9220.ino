@@ -12,6 +12,7 @@
  *
  * - GFX Library for Arduino
  * - SensorLib
+ * - XPowersLib
  * - lvgl (>= v9.0, < v10)
  *
  * Then, follow the steps below to configure the libraries and upload the example:
@@ -45,9 +46,11 @@
  */
 
 #include <Arduino.h>
+#include <XPowersLib.h>
 #include <esp_brookesia.hpp>
 #include <lvgl.h>
 #include "lvgl_port_waveshare.h"
+#include "waveshare_system.hpp"
 #include "private/esp_brookesia_utils.h"
 
 /* Enable to show memory information */
@@ -80,6 +83,7 @@ static size_t external_total = 0;
 ESP_Brookesia_Phone *phone = nullptr;
 
 static void onClockUpdateTimerCallback(struct _lv_timer_t *t);
+static void onSystemServiceTestJob(void *context);
 
 void setup()
 {
@@ -127,18 +131,25 @@ void setup()
     phone->registerLvLockCallback((ESP_Brookesia_GUI_LockCallback_t)(lvgl_port_lock), -1);
     phone->registerLvUnlockCallback((ESP_Brookesia_GUI_UnlockCallback_t)(lvgl_port_unlock));
     ESP_BROOKESIA_CHECK_FALSE_EXIT(phone->begin(), "Begin phone failed");
+    ESP_BROOKESIA_CHECK_FALSE_EXIT(waveshare_system_begin(phone), "Begin Waveshare system services failed");
     // ESP_BROOKESIA_CHECK_FALSE_EXIT(phone->getCoreHome().showContainerBorder(), "Show container border failed");
 
     /* Install apps */
     PhoneAppSimpleConf *app_simple_conf = new PhoneAppSimpleConf();
     ESP_BROOKESIA_CHECK_NULL_EXIT(app_simple_conf, "Create app simple conf failed");
-    ESP_BROOKESIA_CHECK_FALSE_EXIT((phone->installApp(app_simple_conf) >= 0), "Install app simple conf failed");
+    int simple_app_id = phone->installApp(app_simple_conf);
+    ESP_BROOKESIA_CHECK_FALSE_EXIT((simple_app_id >= 0), "Install app simple conf failed");
     PhoneAppComplexConf *app_complex_conf = new PhoneAppComplexConf();
     ESP_BROOKESIA_CHECK_NULL_EXIT(app_complex_conf, "Create app complex conf failed");
     ESP_BROOKESIA_CHECK_FALSE_EXIT((phone->installApp(app_complex_conf) >= 0), "Install app complex conf failed");
     PhoneAppSquareline *app_squareline = PhoneAppSquareline::getInstance();
     ESP_BROOKESIA_CHECK_NULL_EXIT(app_squareline, "Create app squareline failed");
     ESP_BROOKESIA_CHECK_FALSE_EXIT((phone->installApp(app_squareline) >= 0), "Install app squareline failed");
+
+    /* The example registers one background job so notification delivery and
+     * tap-to-open can be tested without writing an additional app first. */
+    waveshare_system_schedule_job(simple_app_id, 5UL * 60UL * 1000UL, onSystemServiceTestJob,
+                                  reinterpret_cast<void *>(static_cast<intptr_t>(simple_app_id)), true);
 
     /* Create a timer to update the clock */
     lv_timer_create(onClockUpdateTimerCallback, 1000, phone);
@@ -151,33 +162,36 @@ void setup()
 
 void loop()
 {
-#if EXAMPLE_SHOW_MEM_INFO
-    internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    internal_total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
-    external_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-    external_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
-    sprintf(buffer, "  Biggest /     Free /    Total\n"
-                    "SRAM : [%8d / %8d / %8d]\n"
-                    "PSRAM : [%8d / %8d / %8d]\n",
-            heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), internal_free, internal_total,
-            heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM), external_free, external_total);
-    Serial.printf("%s", buffer);
-
-    /**
-     * The `lockLv()` and `unlockLv()` functions are used to lock and unlock the LVGL task.
-     * They are registered by the `registerLvLockCallback()` and `registerLvUnlockCallback()` functions.
-     */
     phone->lockLv();
-    // Update memory label on "Recents Screen"
-    if (!phone->getHome().getRecentsScreen()->setMemoryLabel(
-            internal_free / 1024, internal_total / 1024, external_free / 1024, external_total / 1024
-        )) {
-        ESP_BROOKESIA_LOGE("Set memory label failed");
-    }
+    waveshare_system_tick();
     phone->unlockLv();
+#if EXAMPLE_SHOW_MEM_INFO
+    static uint32_t last_memory_report_ms = 0;
+    const uint32_t now_ms = millis();
+    if (now_ms - last_memory_report_ms >= 2000) {
+        last_memory_report_ms = now_ms;
+        internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        internal_total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+        external_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        external_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+        sprintf(buffer, "  Biggest /     Free /    Total\n"
+                        "SRAM : [%8d / %8d / %8d]\n"
+                        "PSRAM : [%8d / %8d / %8d]\n",
+                heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), internal_free, internal_total,
+                heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM), external_free, external_total);
+        Serial.printf("%s", buffer);
+
+        phone->lockLv();
+        if (!phone->getHome().getRecentsScreen()->setMemoryLabel(
+                internal_free / 1024, internal_total / 1024, external_free / 1024, external_total / 1024
+            )) {
+            ESP_BROOKESIA_LOGE("Set memory label failed");
+        }
+        phone->unlockLv();
+    }
 #endif
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 static void onClockUpdateTimerCallback(struct _lv_timer_t *t)
@@ -195,4 +209,10 @@ static void onClockUpdateTimerCallback(struct _lv_timer_t *t)
         phone->getHome().getStatusBar()->setClock(timeinfo.tm_hour, timeinfo.tm_min),
         "Refresh status bar failed"
     );
+}
+
+static void onSystemServiceTestJob(void *context)
+{
+    const int app_id = static_cast<int>(reinterpret_cast<intptr_t>(context));
+    waveshare_system_post_notification(app_id, "Tache de fond", "Touchez pour ouvrir Simple Conf");
 }

@@ -41,6 +41,7 @@ public:
     bool begin(lv_obj_t *parent);
     bool del(void);
     bool toggleClickable(bool clickable);
+    bool setSelected(bool selected);
 
     bool checkInitialized(void) const { return (_main_obj != nullptr); }
 
