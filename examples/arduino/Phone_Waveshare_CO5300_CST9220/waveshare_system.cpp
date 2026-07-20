@@ -63,6 +63,9 @@ const char *const TIMEZONE_RULES[] = {
     "CET-1CEST,M3.5.0/2,M10.5.0/3", "UTC0", "GMT0BST,M3.5.0/1,M10.5.0/2",
     "EST5EDT,M3.2.0/2,M11.1.0/2", "JST-9"
 };
+const char *const MICROPHONE_GAIN_NAMES[] = {
+    "0", "3", "6", "9", "12", "15", "18", "21", "24", "27", "30", "33", "34,5", "36", "37,5"
+};
 constexpr uint8_t TIMEZONE_COUNT = sizeof(TIMEZONE_NAMES) / sizeof(TIMEZONE_NAMES[0]);
 
 /* The AXP2101 sensor measures PMU die temperature, not the cell. These
@@ -209,6 +212,7 @@ lv_obj_t *battery_care_switch = nullptr;
 lv_obj_t *microphone_switch = nullptr;
 lv_obj_t *microphone_gain_slider = nullptr;
 lv_obj_t *microphone_gain_label = nullptr;
+lv_obj_t *noise_reduction_label = nullptr;
 lv_obj_t *output_volume_slider = nullptr;
 lv_obj_t *output_volume_label = nullptr;
 lv_obj_t *notification_badge = nullptr;
@@ -678,6 +682,12 @@ void refresh_control_center()
     if (battery_care_switch != nullptr) lv_obj_set_state(battery_care_switch, LV_STATE_CHECKED, settings.battery.battery_care);
     if (microphone_switch != nullptr) lv_obj_set_state(microphone_switch, LV_STATE_CHECKED, settings.microphones_enabled);
     if (microphone_gain_slider != nullptr) lv_slider_set_value(microphone_gain_slider, settings.microphone_gain, LV_ANIM_OFF);
+    if (noise_reduction_label != nullptr) {
+        lv_label_set_text(noise_reduction_label, waveshare_audio_noise_reduction_is_ready()
+                          ? "AEC + reduction de bruit active" : "Traitement audio indisponible");
+        lv_obj_set_style_text_color(noise_reduction_label,
+                                    waveshare_audio_noise_reduction_is_ready() ? lv_color_hex(0x38C172) : lv_color_hex(0xE07822), 0);
+    }
     if (output_volume_slider != nullptr) lv_slider_set_value(output_volume_slider, settings.output_volume, LV_ANIM_OFF);
     refresh_notification_list();
 }
@@ -890,7 +900,7 @@ void microphone_gain_cb(lv_event_t *event)
 {
     settings.microphone_gain = lv_slider_get_value(static_cast<lv_obj_t *>(lv_event_get_target(event)));
     waveshare_audio_set_microphone_gain(settings.microphone_gain);
-    lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %u dB", settings.microphone_gain * 3U);
+    lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %s dB", MICROPHONE_GAIN_NAMES[settings.microphone_gain]);
     save_settings();
 }
 
@@ -1260,11 +1270,13 @@ void create_control_center()
     microphone_switch = lv_switch_create(mic_row);
     lv_obj_add_event_cb(microphone_switch, microphone_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     microphone_gain_label = lv_label_create(settings_page);
-    lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %u dB", settings.microphone_gain * 3U);
+    lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %s dB", MICROPHONE_GAIN_NAMES[settings.microphone_gain]);
     microphone_gain_slider = lv_slider_create(settings_page);
     lv_obj_set_width(microphone_gain_slider, LV_PCT(100));
     lv_slider_set_range(microphone_gain_slider, 0, 14);
     lv_obj_add_event_cb(microphone_gain_slider, microphone_gain_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    noise_reduction_label = lv_label_create(settings_page);
+    lv_label_set_text(noise_reduction_label, "AEC + reduction de bruit active");
     output_volume_label = lv_label_create(settings_page);
     lv_label_set_text_fmt(output_volume_label, "Volume: %u%%", settings.output_volume);
     output_volume_slider = lv_slider_create(settings_page);
@@ -1638,6 +1650,7 @@ bool waveshare_system_ble_is_allowed(void)
 bool waveshare_system_microphones_enabled(void) { return settings.microphones_enabled; }
 uint8_t waveshare_system_microphone_gain(void) { return settings.microphone_gain; }
 uint8_t waveshare_system_output_volume(void) { return settings.output_volume; }
+bool waveshare_system_noise_reduction_is_ready(void) { return waveshare_audio_noise_reduction_is_ready(); }
 
 bool waveshare_system_acquire_display_lease(const char *)
 {

@@ -43,16 +43,23 @@ The third control-centre page persists these choices in NVS:
 - screen timeout from 30 seconds to 10 minutes, plus an always-on mode;
 - timezone, automatic NTP, and manual date/time;
 - safe battery capacity/current presets and the 4.1 V battery-care target;
-- dual-microphone enable/mute, ES7210 hardware gain in 3 dB steps, and ES8311
-  speaker volume.
+- dual-microphone enable/mute, ES7210 hardware gain up to 37.5 dB, and ES8311
+  speaker volume. AEC and noise reduction are always enabled while the
+  microphones are active.
 
 `waveshare_audio.hpp` is the board audio API. It initializes the shared 16 kHz,
 16-bit I2S bus, powers the ES7210 input channels and ES8311 output path, and
 provides bounded `read()`/`write()` functions. Muting the microphones powers
-down their ES7210 channels rather than merely discarding samples. The hardware
-is a dual-microphone array; acoustic echo/noise cancellation still requires a
-DSP algorithm in the application and is not falsely presented as a codec gain
-feature.
+down their ES7210 channels rather than merely discarding samples.
+
+`waveshare_audio_read()` returns mono 16-bit/16 kHz audio processed by the
+Espressif AFE bundled with Arduino-ESP32 3.3.8. Its `MMR` pipeline receives both
+microphones plus a reference copied from `waveshare_audio_write()`, and keeps
+AEC, dual-microphone speech enhancement, noise suppression, VAD and conservative
+AGC active. Applications must send stereo 16-bit/16 kHz playback through
+`waveshare_audio_write()` so AEC receives the exact speaker reference. The
+ES7210 is the multichannel ADC; the effective DSP runs on ESP32-S3 core 0 and
+uses PSRAM rather than being a hidden ES7210 register.
 
 ## Application API
 
@@ -124,7 +131,9 @@ The current hardware-tested baseline includes:
 - conservative AXP2101 settings for the supplied 1000 mAh 1S LiPo, PMU thermal
   throttling, USB/VBUS detection and long-PWR shutdown request;
 - QMI8658 automatic rotation with debouncing and a persistent rotation lock;
-- ES7210 dual-microphone mute/gain and ES8311 speaker-volume services.
+- ES7210 dual-microphone mute/gain, ES8311 speaker volume, and an always-on
+  Espressif AFE pipeline for AEC, speech enhancement, noise suppression, VAD
+  and AGC.
 
 ## CO5300 rotation solution
 

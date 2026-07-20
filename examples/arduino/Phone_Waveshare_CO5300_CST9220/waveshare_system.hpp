@@ -42,6 +42,7 @@ bool waveshare_system_ble_is_allowed(void);
 bool waveshare_system_microphones_enabled(void);
 uint8_t waveshare_system_microphone_gain(void);
 uint8_t waveshare_system_output_volume(void);
+bool waveshare_system_noise_reduction_is_ready(void);
 
 bool waveshare_system_begin(ESP_Brookesia_Phone *phone);
 void waveshare_system_tick(void);
