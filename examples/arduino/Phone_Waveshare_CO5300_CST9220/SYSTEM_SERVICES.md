@@ -55,8 +55,10 @@ down their ES7210 channels rather than merely discarding samples.
 `waveshare_audio_read()` returns mono 16-bit/16 kHz audio processed by the
 Espressif AFE bundled with Arduino-ESP32 3.3.8. Its `MMR` pipeline receives both
 microphones plus a reference copied from `waveshare_audio_write()`, and keeps
-AEC, dual-microphone speech enhancement, noise suppression, VAD and conservative
-AGC active. Applications must send stereo 16-bit/16 kHz playback through
+AEC, dual-microphone BSS speech enhancement, VAD and conservative AGC active.
+NS is requested too, but Espressif's compatibility check may prioritize the
+dual-microphone BSS stage over its single-channel NS stage. Applications must
+send stereo 16-bit/16 kHz playback through
 `waveshare_audio_write()` so AEC receives the exact speaker reference. The
 ES7210 is the multichannel ADC; the effective DSP runs on ESP32-S3 core 0 and
 uses PSRAM rather than being a hidden ES7210 register.
@@ -132,7 +134,7 @@ The current hardware-tested baseline includes:
   throttling, USB/VBUS detection and long-PWR shutdown request;
 - QMI8658 automatic rotation with debouncing and a persistent rotation lock;
 - ES7210 dual-microphone mute/gain, ES8311 speaker volume, and an always-on
-  Espressif AFE pipeline for AEC, speech enhancement, noise suppression, VAD
+  Espressif AFE pipeline for AEC, dual-microphone interference reduction, VAD
   and AGC.
 
 ## CO5300 rotation solution

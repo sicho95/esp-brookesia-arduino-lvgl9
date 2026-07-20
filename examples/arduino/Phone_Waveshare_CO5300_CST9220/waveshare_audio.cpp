@@ -162,7 +162,8 @@ bool init_audio_frontend()
         return false;
     }
     afe_interface->print_pipeline(afe_data);
-    Serial.printf("[audio] AFE ready: AEC+SE+NS+VAD+AGC, feed=%d fetch=%d\n", afe_feed_samples, afe_fetch_samples);
+    Serial.printf("[audio] AFE ready: AEC+dual-mic enhancement+VAD+AGC, feed=%d fetch=%d\n",
+                  afe_feed_samples, afe_fetch_samples);
     return true;
 }
 
