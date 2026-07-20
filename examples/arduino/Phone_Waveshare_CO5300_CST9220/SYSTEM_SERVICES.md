@@ -6,8 +6,11 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
 
 ## Test now
 
-- Swipe down from the top edge to open the control centre. Use its controls,
-  notifications and settings pages; swipe upward to close it. While open, Brookesia
+- Swipe down from the top edge to open the control centre. Swipe horizontally
+  only between controls and notifications; use the gear button to open the
+  separate full-screen settings view. It hides the status bar and places its
+  back arrow at the top-left edge to maximize usable space. Swipe upward to
+  close it. While open, Brookesia
   launcher/navigation gestures are blocked so sliders cannot move the screen
   underneath.
 - Toggle Wi-Fi, BLE, airplane mode and rotation-lock preference, then change brightness.
@@ -38,7 +41,10 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
 
 ## Settings and audio
 
-The third control-centre page persists these choices in NVS:
+The dedicated full-screen settings view, opened only with the gear button,
+persists these choices in NVS. It is intentionally excluded from horizontal
+page gestures so an ordinary controls/notifications swipe cannot modify a
+setting by mistake:
 
 - screen timeout from 30 seconds to 10 minutes, plus an always-on mode;
 - timezone, automatic NTP, and manual date/time;
@@ -112,9 +118,10 @@ guaranteed software wake source meanwhile.
 
 The current hardware-tested baseline includes:
 
-- a three-page control centre opened from the status bar, with icon-only Wi-Fi,
+- a two-page control centre opened from the status bar, with icon-only Wi-Fi,
   BLE, airplane and rotation-lock controls, brightness, page dots and upward
-  close gesture;
+  close gesture, plus a deliberate gear-button entry to a separate high-contrast
+  settings screen;
 - a notification page with a bounded queue, individual deletion, clear-all,
   actionable notifications, a status-bar count and a temporary foreground
   banner;

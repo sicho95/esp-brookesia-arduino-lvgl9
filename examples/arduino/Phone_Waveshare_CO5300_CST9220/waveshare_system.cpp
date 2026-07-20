@@ -168,6 +168,7 @@ uint8_t display_lease_count = 0;
 bool charge_paused_for_temperature = false;
 bool charge_reduced_for_temperature = false;
 bool control_center_visible = false;
+bool settings_status_bar_was_visible = false;
 bool key_plus_was_down = false;
 bool key_minus_was_down = false;
 volatile bool notification_ui_dirty = false;
@@ -199,7 +200,7 @@ lv_obj_t *notification_list = nullptr;
 lv_obj_t *time_label = nullptr;
 lv_obj_t *control_page_dot = nullptr;
 lv_obj_t *notification_page_dot = nullptr;
-lv_obj_t *settings_page_dot = nullptr;
+lv_obj_t *page_indicator = nullptr;
 lv_obj_t *screen_timeout_dropdown = nullptr;
 lv_obj_t *screen_never_switch = nullptr;
 lv_obj_t *timezone_dropdown = nullptr;
@@ -697,6 +698,7 @@ void refresh_status_indicators()
     if (phone == nullptr) return;
     ESP_Brookesia_StatusBar *status_bar = phone->getHome().getStatusBar();
     const bool status_bar_visible = status_bar != nullptr && status_bar->checkVisible();
+    const bool settings_fullscreen = control_center_visible && control_center_page_index == 2;
     const bool wifi_enabled = settings.wifi_enabled && !settings.airplane_mode;
     const bool ble_enabled = settings.ble_enabled && !settings.airplane_mode;
     const uint8_t notification_count = waveshare_system_get_notification_count();
@@ -739,11 +741,11 @@ void refresh_status_indicators()
 
     if (notification_badge != nullptr) {
         lv_label_set_text_fmt(notification_badge_label, LV_SYMBOL_BELL " %u", notification_count);
-        lv_obj_set_flag(notification_badge, LV_OBJ_FLAG_HIDDEN, !status_bar_visible);
+        lv_obj_set_flag(notification_badge, LV_OBJ_FLAG_HIDDEN, !status_bar_visible || settings_fullscreen);
     }
     if (fullscreen_notification_badge != nullptr) {
         lv_label_set_text_fmt(fullscreen_notification_badge_label, LV_SYMBOL_BELL " %u", notification_count);
-        lv_obj_set_flag(fullscreen_notification_badge, LV_OBJ_FLAG_HIDDEN, status_bar_visible);
+        lv_obj_set_flag(fullscreen_notification_badge, LV_OBJ_FLAG_HIDDEN, status_bar_visible || settings_fullscreen);
     }
 }
 
@@ -790,6 +792,16 @@ void brightness_cb(lv_event_t *event)
     settings.brightness = lv_slider_get_value((lv_obj_t *)lv_event_get_target(event));
     lvgl_port_set_brightness(settings.brightness);
     save_settings();
+}
+
+void settings_button_cb(lv_event_t *)
+{
+    show_control_center_page(2);
+}
+
+void settings_back_cb(lv_event_t *)
+{
+    show_control_center_page(0);
 }
 
 uint8_t screen_timeout_option_index()
@@ -918,13 +930,35 @@ lv_obj_t *add_settings_row(lv_obj_t *parent, const char *title)
     lv_obj_set_size(row, LV_PCT(100), 48);
     lv_obj_set_style_radius(row, 6, 0);
     lv_obj_set_style_bg_color(row, lv_color_hex(0x182128), 0);
+    lv_obj_set_style_text_color(row, lv_color_hex(0xE6EDF3), 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_pad_all(row, 8, 0);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_t *label = lv_label_create(row);
     lv_label_set_text(label, title);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xE6EDF3), 0);
     return row;
+}
+
+void style_settings_control(lv_obj_t *control)
+{
+    if (control == nullptr) return;
+    lv_obj_set_style_text_color(control, lv_color_hex(0xF2F6F8), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(control, lv_color_hex(0x27313B), LV_PART_MAIN);
+    lv_obj_set_style_border_color(control, lv_color_hex(0x4E718A), LV_PART_MAIN);
+    lv_obj_set_style_border_width(control, 1, LV_PART_MAIN);
+}
+
+void style_settings_dropdown(lv_obj_t *dropdown)
+{
+    style_settings_control(dropdown);
+    lv_obj_t *list = lv_dropdown_get_list(dropdown);
+    if (list == nullptr) return;
+    lv_obj_set_style_text_color(list, lv_color_hex(0xF2F6F8), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(list, lv_color_hex(0x27313B), LV_PART_MAIN);
+    lv_obj_set_style_text_color(list, lv_color_white(), LV_PART_SELECTED);
+    lv_obj_set_style_bg_color(list, lv_color_hex(0x1976D2), LV_PART_SELECTED);
 }
 
 lv_obj_t *add_button(lv_obj_t *parent, const char *text, lv_event_cb_t callback, lv_obj_t **label_out)
@@ -1003,14 +1037,31 @@ void add_rotation_lock_icon(lv_obj_t *button)
 
 void show_control_center_page(uint8_t page)
 {
-    control_center_page_index = min<uint8_t>(page, 2);
+    const uint8_t previous_page = control_center_page_index;
+    control_center_page_index = page == 2 ? 2 : (page == 1 ? 1 : 0);
     const bool show_notifications = control_center_page_index == 1;
     const bool show_settings = control_center_page_index == 2;
+    ESP_Brookesia_StatusBar *status_bar = phone != nullptr ? phone->getHome().getStatusBar() : nullptr;
+    lv_obj_t *status_bar_obj = status_bar != nullptr ? status_bar->getMainObj() : nullptr;
+    if (show_settings && previous_page != 2) {
+        settings_status_bar_was_visible = status_bar != nullptr && status_bar->checkVisible();
+        if (status_bar_obj != nullptr) lv_obj_add_flag(status_bar_obj, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_pad_top(control_center, 10, 0);
+        lv_obj_move_foreground(control_center);
+        if (notification_badge != nullptr) lv_obj_add_flag(notification_badge, LV_OBJ_FLAG_HIDDEN);
+        if (fullscreen_notification_badge != nullptr) lv_obj_add_flag(fullscreen_notification_badge, LV_OBJ_FLAG_HIDDEN);
+    } else if (!show_settings && previous_page == 2) {
+        lv_obj_set_style_pad_top(control_center, 58, 0);
+        if (status_bar_obj != nullptr && settings_status_bar_was_visible) lv_obj_clear_flag(status_bar_obj, LV_OBJ_FLAG_HIDDEN);
+        settings_status_bar_was_visible = false;
+        refresh_status_indicators();
+    }
     lv_obj_set_flag(control_page, LV_OBJ_FLAG_HIDDEN, control_center_page_index != 0);
     lv_obj_set_flag(notification_page, LV_OBJ_FLAG_HIDDEN, !show_notifications);
     lv_obj_set_flag(settings_page, LV_OBJ_FLAG_HIDDEN, !show_settings);
-    for (uint8_t i = 0; i < 3; i++) {
-        lv_obj_t *dot = i == 0 ? control_page_dot : (i == 1 ? notification_page_dot : settings_page_dot);
+    lv_obj_set_flag(page_indicator, LV_OBJ_FLAG_HIDDEN, show_settings);
+    for (uint8_t i = 0; i < 2; i++) {
+        lv_obj_t *dot = i == 0 ? control_page_dot : notification_page_dot;
         const bool selected = i == control_center_page_index;
         lv_obj_set_size(dot, selected ? 12 : 8, selected ? 12 : 8);
         lv_obj_set_style_bg_opa(dot, selected ? LV_OPA_COVER : LV_OPA_40, 0);
@@ -1123,6 +1174,20 @@ void create_control_center()
     lv_obj_set_flex_flow(control_page, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(control_page, 12, 0);
 
+    lv_obj_t *control_header = lv_obj_create(control_page);
+    lv_obj_set_size(control_header, LV_PCT(100), 42);
+    lv_obj_set_style_bg_opa(control_header, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(control_header, 0, 0);
+    lv_obj_set_style_pad_all(control_header, 0, 0);
+    lv_obj_set_flex_flow(control_header, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(control_header, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t *control_title = lv_label_create(control_header);
+    lv_label_set_text(control_title, "Controles");
+    lv_obj_set_style_text_font(control_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(control_title, lv_color_hex(0xE6EDF3), 0);
+    lv_obj_t *settings_button = add_button(control_header, LV_SYMBOL_SETTINGS, settings_button_cb, nullptr);
+    lv_obj_set_size(settings_button, 48, 42);
+
     lv_obj_t *row = lv_obj_create(control_page);
     lv_obj_set_size(row, LV_PCT(100), 86);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
@@ -1190,16 +1255,29 @@ void create_control_center()
     lv_obj_set_flex_flow(settings_page, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(settings_page, 8, 0);
     lv_obj_set_scroll_dir(settings_page, LV_DIR_VER);
+    lv_obj_set_style_text_color(settings_page, lv_color_hex(0xE6EDF3), 0);
     lv_obj_add_flag(settings_page, LV_OBJ_FLAG_HIDDEN);
 
-    lv_obj_t *settings_title = lv_label_create(settings_page);
+    lv_obj_t *settings_header = lv_obj_create(settings_page);
+    lv_obj_set_size(settings_header, LV_PCT(100), 46);
+    lv_obj_set_style_bg_opa(settings_header, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(settings_header, 0, 0);
+    lv_obj_set_style_pad_all(settings_header, 0, 0);
+    lv_obj_set_flex_flow(settings_header, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(settings_header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(settings_header, 12, 0);
+    lv_obj_t *settings_back = add_button(settings_header, LV_SYMBOL_LEFT, settings_back_cb, nullptr);
+    lv_obj_set_size(settings_back, 48, 42);
+    lv_obj_t *settings_title = lv_label_create(settings_header);
     lv_label_set_text(settings_title, "Parametres");
     lv_obj_set_style_text_font(settings_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(settings_title, lv_color_hex(0xE6EDF3), 0);
 
     lv_obj_t *screen_row = add_settings_row(settings_page, "Veille ecran");
     screen_timeout_dropdown = lv_dropdown_create(screen_row);
     lv_dropdown_set_options(screen_timeout_dropdown, "30 s\n1 min\n2 min\n5 min\n10 min");
     lv_obj_set_width(screen_timeout_dropdown, 120);
+    style_settings_dropdown(screen_timeout_dropdown);
     lv_obj_add_event_cb(screen_timeout_dropdown, screen_timeout_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     lv_obj_t *never_row = add_settings_row(settings_page, "Ecran toujours actif");
     screen_never_switch = lv_switch_create(never_row);
@@ -1209,6 +1287,7 @@ void create_control_center()
     timezone_dropdown = lv_dropdown_create(tz_row);
     lv_dropdown_set_options(timezone_dropdown, "Europe/Paris\nUTC\nEurope/London\nAmerica/New_York\nAsia/Tokyo");
     lv_obj_set_width(timezone_dropdown, 190);
+    style_settings_dropdown(timezone_dropdown);
     lv_obj_add_event_cb(timezone_dropdown, timezone_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     lv_obj_t *ntp_row = add_settings_row(settings_page, "Mise a l'heure Wi-Fi");
     ntp_switch = lv_switch_create(ntp_row);
@@ -1225,6 +1304,7 @@ void create_control_center()
     lv_spinbox_set_digit_format(manual_date_spinbox, 8, 0);
     lv_spinbox_set_value(manual_date_spinbox, (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday);
     lv_obj_set_width(manual_date_spinbox, 118);
+    style_settings_control(manual_date_spinbox);
     lv_obj_t *date_minus = add_button(datetime_row, LV_SYMBOL_MINUS, spinbox_step_cb, nullptr);
     lv_obj_set_size(date_minus, 38, 38);
     lv_obj_remove_event_cb(date_minus, spinbox_step_cb);
@@ -1238,6 +1318,7 @@ void create_control_center()
     lv_spinbox_set_digit_format(manual_time_spinbox, 4, 0);
     lv_spinbox_set_value(manual_time_spinbox, local.tm_hour * 100 + local.tm_min);
     lv_obj_set_width(manual_time_spinbox, 78);
+    style_settings_control(manual_time_spinbox);
     lv_obj_t *time_minus = add_button(datetime_row, LV_SYMBOL_MINUS, spinbox_step_cb, nullptr);
     lv_obj_set_size(time_minus, 38, 38);
     lv_obj_remove_event_cb(time_minus, spinbox_step_cb);
@@ -1253,6 +1334,7 @@ void create_control_center()
     battery_capacity_dropdown = lv_dropdown_create(capacity_row);
     lv_dropdown_set_options(battery_capacity_dropdown, "500 mAh\n750 mAh\n1000 mAh\n1500 mAh\n2000 mAh");
     lv_obj_set_width(battery_capacity_dropdown, 130);
+    style_settings_dropdown(battery_capacity_dropdown);
     const uint16_t capacity = settings.battery.capacity_mah;
     lv_dropdown_set_selected(battery_capacity_dropdown, capacity <= 500 ? 0 : capacity <= 750 ? 1 : capacity <= 1000 ? 2 : capacity <= 1500 ? 3 : 4);
     lv_obj_add_event_cb(battery_capacity_dropdown, battery_capacity_cb, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1260,6 +1342,7 @@ void create_control_center()
     battery_current_dropdown = lv_dropdown_create(current_row);
     lv_dropdown_set_options(battery_current_dropdown, "100 mA\n200 mA\n300 mA");
     lv_obj_set_width(battery_current_dropdown, 120);
+    style_settings_dropdown(battery_current_dropdown);
     lv_dropdown_set_selected(battery_current_dropdown, settings.battery.charge_current <= 4 ? 0 : settings.battery.charge_current <= 8 ? 1 : 2);
     lv_obj_add_event_cb(battery_current_dropdown, battery_current_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     lv_obj_t *care_row = add_settings_row(settings_page, "Preserver la batterie (4,1 V)");
@@ -1284,7 +1367,11 @@ void create_control_center()
     lv_slider_set_range(output_volume_slider, 0, 100);
     lv_obj_add_event_cb(output_volume_slider, output_volume_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *page_indicator = lv_obj_create(control_center);
+    for (lv_obj_t *label : {microphone_gain_label, noise_reduction_label, output_volume_label}) {
+        lv_obj_set_style_text_color(label, lv_color_hex(0xE6EDF3), 0);
+    }
+
+    page_indicator = lv_obj_create(control_center);
     lv_obj_set_size(page_indicator, LV_PCT(100), 18);
     lv_obj_set_style_bg_opa(page_indicator, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(page_indicator, 0, 0);
@@ -1294,8 +1381,7 @@ void create_control_center()
     lv_obj_set_flex_align(page_indicator, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     control_page_dot = lv_obj_create(page_indicator);
     notification_page_dot = lv_obj_create(page_indicator);
-    settings_page_dot = lv_obj_create(page_indicator);
-    for (lv_obj_t *dot : {control_page_dot, notification_page_dot, settings_page_dot}) {
+    for (lv_obj_t *dot : {control_page_dot, notification_page_dot}) {
         lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(dot, lv_color_white(), 0);
         lv_obj_set_style_border_width(dot, 0, 0);
@@ -1438,8 +1524,9 @@ void update_control_center_touch_gesture()
         control_center_touch_start.y >= slider_area.y1 && control_center_touch_start.y <= slider_area.y2;
     if (started_on_brightness) return;
 
-    if (dx < 0 && control_center_page_index < 2) show_control_center_page(control_center_page_index + 1);
-    if (dx > 0 && control_center_page_index > 0) show_control_center_page(control_center_page_index - 1);
+    if (control_center_page_index == 2) return;
+    if (dx < 0 && control_center_page_index == 0) show_control_center_page(1);
+    if (dx > 0 && control_center_page_index == 1) show_control_center_page(0);
 }
 
 void gesture_cb(lv_event_t *event)
@@ -1471,11 +1558,11 @@ void gesture_cb(lv_event_t *event)
             info->start_x >= slider_area.x1 && info->start_x <= slider_area.x2 &&
             info->start_y >= slider_area.y1 && info->start_y <= slider_area.y2;
         if (!started_on_brightness && info->direction == ESP_BROOKESIA_GESTURE_DIR_LEFT) {
-            if (control_center_page_index < 2) show_control_center_page(control_center_page_index + 1);
+            if (control_center_page_index == 0) show_control_center_page(1);
             return;
         }
         if (!started_on_brightness && info->direction == ESP_BROOKESIA_GESTURE_DIR_RIGHT) {
-            if (control_center_page_index > 0) show_control_center_page(control_center_page_index - 1);
+            if (control_center_page_index == 1) show_control_center_page(0);
             return;
         }
     }
@@ -1715,6 +1802,7 @@ void waveshare_system_show_control_center(void)
 void waveshare_system_hide_control_center(void)
 {
     if (control_center == nullptr) return;
+    if (control_center_page_index == 2) show_control_center_page(0);
     control_center_visible = false;
     if (phone != nullptr) phone->getManager().setSystemOverlayVisible(false);
     lv_obj_add_flag(control_center, LV_OBJ_FLAG_HIDDEN);
