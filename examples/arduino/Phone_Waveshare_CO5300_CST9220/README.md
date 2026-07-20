@@ -42,8 +42,9 @@ Do not copy the library `src` directory into this sketch folder. Install or link
 
 Apps remain paused in the background when returning home. In this Waveshare example, recents use launcher icons instead of live snapshots, the trash icon closes only the currently selected app, and the upward-close gesture is tuned with lower thresholds for the 480 x 480 screen.
 
-The board-specific control centre, notifications, scheduled jobs, NTP, keys,
-display-idle policy, display leases, battery charging and power-state behavior
+The board-specific three-page control centre, notifications, RTC-persisted
+scheduled jobs, NTP/manual time, keys, real light/deep sleep, display leases,
+battery charging and ES7210/ES8311 audio behavior
 are documented in [SYSTEM_SERVICES.md](./SYSTEM_SERVICES.md). The complete
 CO5300 software-rotation rationale and the Arduino_GFX QSPI overload trap are
 recorded in [PORTING_LVGL9.md](../../../PORTING_LVGL9.md).

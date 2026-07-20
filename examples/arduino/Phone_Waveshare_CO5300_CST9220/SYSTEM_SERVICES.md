@@ -6,8 +6,8 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
 
 ## Test now
 
-- Swipe down from the top edge to open the control centre. Use its `Controles`
-  and `Notifications` pages; swipe upward to close it. While open, Brookesia
+- Swipe down from the top edge to open the control centre. Use its controls,
+  notifications and settings pages; swipe upward to close it. While open, Brookesia
   launcher/navigation gestures are blocked so sliders cannot move the screen
   underneath.
 - Toggle Wi-Fi, BLE, airplane mode and rotation-lock preference, then change brightness.
@@ -31,10 +31,28 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
   `Simple Conf` app. Notifications can be removed individually with their `X`
   or cleared together from the notifications page.
 - When Wi-Fi is connected by an application, the service synchronises system
-  time using NTP and the Europe/Paris daylight-saving rules. The status-bar
-  clock already reads this system time.
+  time using NTP and the selected timezone. Europe/Paris remains the default.
+  NTP can be disabled and date/time can be set manually from settings.
 - Short PWR moves an active device to connected standby and wakes it from a
   screen-off state. Long PWR saves settings and requests an AXP2101 shutdown.
+
+## Settings and audio
+
+The third control-centre page persists these choices in NVS:
+
+- screen timeout from 30 seconds to 10 minutes, plus an always-on mode;
+- timezone, automatic NTP, and manual date/time;
+- safe battery capacity/current presets and the 4.1 V battery-care target;
+- dual-microphone enable/mute, ES7210 hardware gain in 3 dB steps, and ES8311
+  speaker volume.
+
+`waveshare_audio.hpp` is the board audio API. It initializes the shared 16 kHz,
+16-bit I2S bus, powers the ES7210 input channels and ES8311 output path, and
+provides bounded `read()`/`write()` functions. Muting the microphones powers
+down their ES7210 channels rather than merely discarding samples. The hardware
+is a dual-microphone array; acoustic echo/noise cancellation still requires a
+DSP algorithm in the application and is not falsely presented as a codec gain
+feature.
 
 ## Application API
 
@@ -44,7 +62,7 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
   callbacks. Callbacks execute on a FreeRTOS task outside LVGL and may post
   notifications, but must not manipulate LVGL objects directly.
 - `waveshare_system_get_next_job_delay_ms()` provides the next requested wake
-  delay for the future deep-sleep coordinator.
+  delay to the sleep coordinator.
 - `waveshare_system_request_ntp_sync()` restarts NTP synchronisation after an
   application establishes or changes Wi-Fi connectivity.
 
@@ -64,24 +82,28 @@ The AXP2101 reports its own die temperature. It is not a battery-cell sensor,
 so this does not replace an NTC attached to the cell for a future production
 power policy.
 
-## Deliberately not enabled yet
+## Real sleep and scheduled wake
 
-After 10 minutes the service enters a connected-standby state and after
-20 minutes it reports `Deep sleep pret`, but it does not call
-`esp_deep_sleep_start()`. The exact PWR/PMU interrupt wiring and wake sources
-must be tested first. Enabling deep sleep before that validation can leave a
-battery-powered board apparently dead and unable to wake from the intended
-button.
+After the screen timeout, the display turns off. At ten minutes the device uses
+ESP32-S3 light sleep; at twenty minutes it enters real deep sleep. Before deep
+sleep the service stores each registered job's remaining delay in RTC memory,
+then selects the earlier of the next job and the 30-minute fallback wake. After
+the reset-style wake, an app registers its callback normally and receives the
+preserved deadline instead of an unconditional immediate run.
 
-Scheduled jobs currently run while the ESP32 is awake. Persisting job deadlines
-across reboot and using the next deadline as an RTC/PMU deep-sleep wake source
-require the next hardware-validation pass.
+The ESP32 wake inputs configured by this board port are CST9220 INT
+(`GPIO11`), `+` (`GPIO18`), `-`/BOOT (`GPIO0`), and the RTC timer. The AXP2101
+PWR key has no documented direct ESP32 wake GPIO in the Waveshare schematic
+interface, so connected standby wakes every five seconds to poll its IRQ. A
+long PWR press remains an AXP2101 hardware shutdown. Deep-sleep PWR-only wake
+must be validated on the physical board; use touch or either side key as the
+guaranteed software wake source meanwhile.
 
 ## Validated implementation summary (2026-07-20)
 
 The current hardware-tested baseline includes:
 
-- a two-page control centre opened from the status bar, with icon-only Wi-Fi,
+- a three-page control centre opened from the status bar, with icon-only Wi-Fi,
   BLE, airplane and rotation-lock controls, brightness, page dots and upward
   close gesture;
 - a notification page with a bounded queue, individual deletion, clear-all,
@@ -94,18 +116,15 @@ The current hardware-tested baseline includes:
   long-press launch and long-press return to Home;
 - protection against opening an empty recents screen and automatic return to
   Home after the final background app is closed;
-- one-minute screen idle, connected-standby and deep-sleep-pending states,
+- configurable screen idle, real connected light sleep and deep sleep,
   touch/PWR wake handling, 30-second notification wake and application display
   leases for always-visible use cases such as GPS;
-- periodic background callbacks outside the LVGL task, actionable
-  notifications and NTP synchronisation when Wi-Fi is available;
+- RTC-persisted periodic background callbacks outside the LVGL task, actionable
+  notifications, selectable timezone and NTP synchronisation when Wi-Fi is available;
 - conservative AXP2101 settings for the supplied 1000 mAh 1S LiPo, PMU thermal
   throttling, USB/VBUS detection and long-PWR shutdown request;
-- QMI8658 automatic rotation with debouncing and a persistent rotation lock.
-
-Real ESP32 deep sleep is still intentionally disabled. The framework reaches a
-`DEEP_SLEEP_PENDING` state, but PMU/button wake wiring and persistence of
-scheduled deadlines must be validated before calling `esp_deep_sleep_start()`.
+- QMI8658 automatic rotation with debouncing and a persistent rotation lock;
+- ES7210 dual-microphone mute/gain and ES8311 speaker-volume services.
 
 ## CO5300 rotation solution
 

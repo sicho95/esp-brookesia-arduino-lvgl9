@@ -38,6 +38,11 @@ void waveshare_system_request_ntp_sync(void);
 bool waveshare_system_time_is_synchronized(void);
 bool waveshare_system_ble_is_allowed(void);
 
+/* Hardware audio service: ES7210 dual microphones and ES8311 speaker codec. */
+bool waveshare_system_microphones_enabled(void);
+uint8_t waveshare_system_microphone_gain(void);
+uint8_t waveshare_system_output_volume(void);
+
 bool waveshare_system_begin(ESP_Brookesia_Phone *phone);
 void waveshare_system_tick(void);
 void waveshare_system_note_user_activity(void);

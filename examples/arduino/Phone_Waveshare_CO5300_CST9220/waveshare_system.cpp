@@ -10,11 +10,13 @@
 #include <WiFi.h>
 #include <Wire.h>
 #include <time.h>
+#include <sys/time.h>
 #include <esp_sleep.h>
 #include <esp_timer.h>
 #include <lvgl.h>
 #include <esp_brookesia.hpp>
 #include "lvgl_port_waveshare.h"
+#include "waveshare_audio.hpp"
 
 #if __has_include(<XPowersLib.h>)
 #include <XPowersLib.h>
@@ -46,10 +48,22 @@ constexpr uint8_t MAX_NOTIFICATIONS = 6;
 constexpr uint8_t MAX_SCHEDULED_JOBS = 8;
 constexpr int PIN_KEY_PLUS = 18;
 constexpr int PIN_KEY_MINUS = 0;
+constexpr int PIN_TOUCH_INTERRUPT = 11;
 constexpr int PIN_IMU_INT1 = 17;
 constexpr int PIN_IMU_INT2 = 21;
 constexpr uint8_t QMI8658_I2C_ADDRESS = 0x6B;
 constexpr uint32_t LONG_PRESS_MS = 750;
+constexpr uint32_t DEFAULT_DEEP_SLEEP_WAKE_MS = 30UL * 60UL * 1000UL;
+constexpr uint32_t MIN_SLEEP_WAKE_MS = 5000;
+constexpr uint32_t RTC_STATE_MAGIC = 0x42524B53; // BRKS
+
+const uint32_t SCREEN_TIMEOUT_OPTIONS[] = {30000, 60000, 120000, 300000, 600000};
+const char *const TIMEZONE_NAMES[] = {"Europe/Paris", "UTC", "Europe/London", "America/New_York", "Asia/Tokyo"};
+const char *const TIMEZONE_RULES[] = {
+    "CET-1CEST,M3.5.0/2,M10.5.0/3", "UTC0", "GMT0BST,M3.5.0/1,M10.5.0/2",
+    "EST5EDT,M3.2.0/2,M11.1.0/2", "JST-9"
+};
+constexpr uint8_t TIMEZONE_COUNT = sizeof(TIMEZONE_NAMES) / sizeof(TIMEZONE_NAMES[0]);
 
 /* The AXP2101 sensor measures PMU die temperature, not the cell. These
  * conservative limits protect the charging circuit until an optional battery
@@ -72,6 +86,12 @@ struct Settings {
     bool ble_enabled;
     bool airplane_mode;
     bool rotation_locked;
+    bool screen_never;
+    bool ntp_enabled;
+    uint8_t timezone_index;
+    bool microphones_enabled;
+    uint8_t microphone_gain;
+    uint8_t output_volume;
     BatteryProfile battery;
 };
 
@@ -94,6 +114,21 @@ struct ScheduledJob {
     void *context;
 };
 
+struct PersistentJobDeadline {
+    bool used;
+    int app_id;
+    uint32_t period_ms;
+    uint32_t remaining_ms;
+};
+
+struct RtcSystemState {
+    uint32_t magic;
+    uint32_t requested_sleep_ms;
+    PersistentJobDeadline jobs[MAX_SCHEDULED_JOBS];
+};
+
+RTC_DATA_ATTR RtcSystemState rtc_system_state = {};
+
 ESP_Brookesia_Phone *phone = nullptr;
 Preferences preferences;
 Settings settings = {
@@ -103,6 +138,12 @@ Settings settings = {
     .ble_enabled = true,
     .airplane_mode = false,
     .rotation_locked = false,
+    .screen_never = false,
+    .ntp_enabled = true,
+    .timezone_index = 0,
+    .microphones_enabled = true,
+    .microphone_gain = 8,
+    .output_volume = 60,
     .battery = {
         .capacity_mah = 1000,
         .charge_voltage = 3, // AXP2101 4.2 V
@@ -132,12 +173,14 @@ volatile bool notification_banner_pending = false;
 bool ntp_started = false;
 bool time_synchronized = false;
 bool notification_wake_active = false;
+bool connected_sleep_entered = false;
 uint32_t notification_wake_deadline_ms = 0;
 uint32_t key_plus_down_ms = 0;
 uint32_t key_minus_down_ms = 0;
 lv_obj_t *control_center = nullptr;
 lv_obj_t *control_page = nullptr;
 lv_obj_t *notification_page = nullptr;
+lv_obj_t *settings_page = nullptr;
 lv_obj_t *state_label = nullptr;
 lv_obj_t *battery_label = nullptr;
 lv_obj_t *wifi_button_label = nullptr;
@@ -153,6 +196,21 @@ lv_obj_t *notification_list = nullptr;
 lv_obj_t *time_label = nullptr;
 lv_obj_t *control_page_dot = nullptr;
 lv_obj_t *notification_page_dot = nullptr;
+lv_obj_t *settings_page_dot = nullptr;
+lv_obj_t *screen_timeout_dropdown = nullptr;
+lv_obj_t *screen_never_switch = nullptr;
+lv_obj_t *timezone_dropdown = nullptr;
+lv_obj_t *ntp_switch = nullptr;
+lv_obj_t *manual_date_spinbox = nullptr;
+lv_obj_t *manual_time_spinbox = nullptr;
+lv_obj_t *battery_capacity_dropdown = nullptr;
+lv_obj_t *battery_current_dropdown = nullptr;
+lv_obj_t *battery_care_switch = nullptr;
+lv_obj_t *microphone_switch = nullptr;
+lv_obj_t *microphone_gain_slider = nullptr;
+lv_obj_t *microphone_gain_label = nullptr;
+lv_obj_t *output_volume_slider = nullptr;
+lv_obj_t *output_volume_label = nullptr;
 lv_obj_t *notification_badge = nullptr;
 lv_obj_t *notification_badge_label = nullptr;
 lv_obj_t *fullscreen_notification_badge = nullptr;
@@ -175,6 +233,7 @@ portMUX_TYPE service_mux = portMUX_INITIALIZER_UNLOCKED;
 void set_power_state(WaveshareSystemPowerState next);
 void show_control_center_page(uint8_t page);
 void refresh_status_indicators();
+uint8_t screen_timeout_option_index();
 
 #if WAVESHARE_SYSTEM_HAS_PMU
 XPowersAXP2101 *pmu = nullptr;
@@ -308,12 +367,12 @@ void dispatch_scheduled_jobs(uint32_t now)
 
 void update_network_time(uint32_t now)
 {
-    if (settings.airplane_mode || !settings.wifi_enabled || WiFi.status() != WL_CONNECTED) return;
+    if (!settings.ntp_enabled || settings.airplane_mode || !settings.wifi_enabled || WiFi.status() != WL_CONNECTED) return;
     if (!ntp_started || now - last_ntp_attempt_ms >= NTP_RETRY_PERIOD_MS) {
-        configTzTime("CET-1CEST,M3.5.0/2,M10.5.0/3", "pool.ntp.org", "time.google.com");
+        configTzTime(TIMEZONE_RULES[settings.timezone_index], "pool.ntp.org", "time.google.com");
         ntp_started = true;
         last_ntp_attempt_ms = now;
-        Serial.println("[system] NTP sync requested (Europe/Paris)");
+        Serial.printf("[system] NTP sync requested (%s)\n", TIMEZONE_NAMES[settings.timezone_index]);
     }
     time_t current_time = time(nullptr);
     time_synchronized = current_time >= 1704067200; // 2024-01-01
@@ -338,6 +397,12 @@ void save_settings()
     preferences.putBool("ble", settings.ble_enabled);
     preferences.putBool("airplane", settings.airplane_mode);
     preferences.putBool("rot_lock", settings.rotation_locked);
+    preferences.putBool("screen_never", settings.screen_never);
+    preferences.putBool("ntp", settings.ntp_enabled);
+    preferences.putUChar("timezone", settings.timezone_index);
+    preferences.putBool("mic_on", settings.microphones_enabled);
+    preferences.putUChar("mic_gain", settings.microphone_gain);
+    preferences.putUChar("volume", settings.output_volume);
     preferences.putUShort("bat_mah", settings.battery.capacity_mah);
     preferences.putUChar("bat_v", settings.battery.charge_voltage);
     preferences.putUChar("bat_i", settings.battery.charge_current);
@@ -353,6 +418,12 @@ void load_settings()
     settings.ble_enabled = preferences.getBool("ble", settings.ble_enabled);
     settings.airplane_mode = preferences.getBool("airplane", settings.airplane_mode);
     settings.rotation_locked = preferences.getBool("rot_lock", settings.rotation_locked);
+    settings.screen_never = preferences.getBool("screen_never", settings.screen_never);
+    settings.ntp_enabled = preferences.getBool("ntp", settings.ntp_enabled);
+    settings.timezone_index = preferences.getUChar("timezone", settings.timezone_index);
+    settings.microphones_enabled = preferences.getBool("mic_on", settings.microphones_enabled);
+    settings.microphone_gain = preferences.getUChar("mic_gain", settings.microphone_gain);
+    settings.output_volume = preferences.getUChar("volume", settings.output_volume);
     settings.battery.capacity_mah = preferences.getUShort("bat_mah", settings.battery.capacity_mah);
     settings.battery.charge_voltage = preferences.getUChar("bat_v", settings.battery.charge_voltage);
     settings.battery.charge_current = preferences.getUChar("bat_i", settings.battery.charge_current);
@@ -366,6 +437,11 @@ void load_settings()
     if (settings.battery.charge_current > 10) {
         settings.battery.charge_current = 10;
     }
+    settings.timezone_index = constrain(settings.timezone_index, 0, TIMEZONE_COUNT - 1);
+    settings.microphone_gain = constrain(settings.microphone_gain, 0, 14);
+    settings.output_volume = constrain(settings.output_volume, 0, 100);
+    setenv("TZ", TIMEZONE_RULES[settings.timezone_index], 1);
+    tzset();
 }
 
 void apply_radio_settings()
@@ -592,9 +668,17 @@ void refresh_control_center()
         lv_slider_set_value(brightness_slider, settings.brightness, LV_ANIM_OFF);
     }
     if (time_label != nullptr) {
-        lv_label_set_text(time_label, time_synchronized ? "Heure: synchronisee (Europe/Paris)" :
-                          (WiFi.status() == WL_CONNECTED ? "Heure: synchronisation..." : "Heure: en attente du Wi-Fi"));
+        if (time_synchronized) lv_label_set_text_fmt(time_label, "Heure: synchronisee (%s)", TIMEZONE_NAMES[settings.timezone_index]);
+        else lv_label_set_text(time_label, WiFi.status() == WL_CONNECTED ? "Heure: synchronisation..." : "Heure: en attente du Wi-Fi");
     }
+    if (screen_timeout_dropdown != nullptr) lv_dropdown_set_selected(screen_timeout_dropdown, screen_timeout_option_index());
+    if (screen_never_switch != nullptr) lv_obj_set_state(screen_never_switch, LV_STATE_CHECKED, settings.screen_never);
+    if (timezone_dropdown != nullptr) lv_dropdown_set_selected(timezone_dropdown, settings.timezone_index);
+    if (ntp_switch != nullptr) lv_obj_set_state(ntp_switch, LV_STATE_CHECKED, settings.ntp_enabled);
+    if (battery_care_switch != nullptr) lv_obj_set_state(battery_care_switch, LV_STATE_CHECKED, settings.battery.battery_care);
+    if (microphone_switch != nullptr) lv_obj_set_state(microphone_switch, LV_STATE_CHECKED, settings.microphones_enabled);
+    if (microphone_gain_slider != nullptr) lv_slider_set_value(microphone_gain_slider, settings.microphone_gain, LV_ANIM_OFF);
+    if (output_volume_slider != nullptr) lv_slider_set_value(output_volume_slider, settings.output_volume, LV_ANIM_OFF);
     refresh_notification_list();
 }
 
@@ -698,6 +782,141 @@ void brightness_cb(lv_event_t *event)
     save_settings();
 }
 
+uint8_t screen_timeout_option_index()
+{
+    for (uint8_t i = 0; i < sizeof(SCREEN_TIMEOUT_OPTIONS) / sizeof(SCREEN_TIMEOUT_OPTIONS[0]); i++) {
+        if (settings.display_off_delay_ms == SCREEN_TIMEOUT_OPTIONS[i]) return i;
+    }
+    return 1;
+}
+
+void screen_timeout_cb(lv_event_t *event)
+{
+    const uint16_t selected = lv_dropdown_get_selected(static_cast<lv_obj_t *>(lv_event_get_target(event)));
+    settings.display_off_delay_ms = SCREEN_TIMEOUT_OPTIONS[min<uint16_t>(selected, 4)];
+    save_settings();
+}
+
+void screen_never_cb(lv_event_t *event)
+{
+    settings.screen_never = lv_obj_has_state(static_cast<lv_obj_t *>(lv_event_get_target(event)), LV_STATE_CHECKED);
+    save_settings();
+}
+
+void timezone_cb(lv_event_t *event)
+{
+    settings.timezone_index = min<uint16_t>(lv_dropdown_get_selected(static_cast<lv_obj_t *>(lv_event_get_target(event))),
+                                            TIMEZONE_COUNT - 1);
+    setenv("TZ", TIMEZONE_RULES[settings.timezone_index], 1);
+    tzset();
+    waveshare_system_request_ntp_sync();
+    save_settings();
+}
+
+void ntp_cb(lv_event_t *event)
+{
+    settings.ntp_enabled = lv_obj_has_state(static_cast<lv_obj_t *>(lv_event_get_target(event)), LV_STATE_CHECKED);
+    if (settings.ntp_enabled) waveshare_system_request_ntp_sync();
+    save_settings();
+}
+
+void manual_datetime_apply_cb(lv_event_t *)
+{
+    const int32_t date_value = lv_spinbox_get_value(manual_date_spinbox);
+    const int32_t time_value = lv_spinbox_get_value(manual_time_spinbox);
+    struct tm value = {};
+    value.tm_year = date_value / 10000 - 1900;
+    value.tm_mon = (date_value / 100) % 100 - 1;
+    value.tm_mday = date_value % 100;
+    value.tm_hour = time_value / 100;
+    value.tm_min = time_value % 100;
+    value.tm_sec = 0;
+    value.tm_isdst = -1;
+    if (value.tm_mon < 0 || value.tm_mon > 11 || value.tm_mday < 1 || value.tm_mday > 31 ||
+        value.tm_hour > 23 || value.tm_min > 59) {
+        waveshare_system_post_notification(-1, "Date et heure", "Valeur invalide");
+        return;
+    }
+    const time_t epoch = mktime(&value);
+    struct timeval tv = {.tv_sec = epoch, .tv_usec = 0};
+    settimeofday(&tv, nullptr);
+    time_synchronized = true;
+    waveshare_system_post_notification(-1, "Date et heure", "Reglage manuel applique");
+}
+
+void spinbox_step_cb(lv_event_t *event)
+{
+    const intptr_t command = reinterpret_cast<intptr_t>(lv_event_get_user_data(event));
+    lv_obj_t *spinbox = abs(command) == 1 ? manual_date_spinbox : manual_time_spinbox;
+    if (command > 0) lv_spinbox_increment(spinbox);
+    else lv_spinbox_decrement(spinbox);
+}
+
+void battery_capacity_cb(lv_event_t *event)
+{
+    static const uint16_t capacities[] = {500, 750, 1000, 1500, 2000};
+    settings.battery.capacity_mah = capacities[min<uint16_t>(lv_dropdown_get_selected(static_cast<lv_obj_t *>(lv_event_get_target(event))), 4)];
+    save_settings();
+}
+
+void battery_current_cb(lv_event_t *event)
+{
+    static const uint8_t currents[] = {4, 8, 10}; // AXP2101: 100, 200, 300 mA.
+    settings.battery.charge_current = currents[min<uint16_t>(lv_dropdown_get_selected(static_cast<lv_obj_t *>(lv_event_get_target(event))), 2)];
+#if WAVESHARE_SYSTEM_HAS_PMU
+    apply_battery_profile();
+#endif
+    save_settings();
+}
+
+void battery_care_cb(lv_event_t *event)
+{
+    settings.battery.battery_care = lv_obj_has_state(static_cast<lv_obj_t *>(lv_event_get_target(event)), LV_STATE_CHECKED);
+    settings.battery.charge_voltage = settings.battery.battery_care ? 2 : 3;
+#if WAVESHARE_SYSTEM_HAS_PMU
+    apply_battery_profile();
+#endif
+    save_settings();
+}
+
+void microphone_switch_cb(lv_event_t *event)
+{
+    settings.microphones_enabled = lv_obj_has_state(static_cast<lv_obj_t *>(lv_event_get_target(event)), LV_STATE_CHECKED);
+    waveshare_audio_set_microphones_enabled(settings.microphones_enabled);
+    save_settings();
+}
+
+void microphone_gain_cb(lv_event_t *event)
+{
+    settings.microphone_gain = lv_slider_get_value(static_cast<lv_obj_t *>(lv_event_get_target(event)));
+    waveshare_audio_set_microphone_gain(settings.microphone_gain);
+    lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %u dB", settings.microphone_gain * 3U);
+    save_settings();
+}
+
+void output_volume_cb(lv_event_t *event)
+{
+    settings.output_volume = lv_slider_get_value(static_cast<lv_obj_t *>(lv_event_get_target(event)));
+    waveshare_audio_set_output_volume(settings.output_volume);
+    lv_label_set_text_fmt(output_volume_label, "Volume: %u%%", settings.output_volume);
+    save_settings();
+}
+
+lv_obj_t *add_settings_row(lv_obj_t *parent, const char *title)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_set_size(row, LV_PCT(100), 48);
+    lv_obj_set_style_radius(row, 6, 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x182128), 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_pad_all(row, 8, 0);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t *label = lv_label_create(row);
+    lv_label_set_text(label, title);
+    return row;
+}
+
 lv_obj_t *add_button(lv_obj_t *parent, const char *text, lv_event_cb_t callback, lv_obj_t **label_out)
 {
     lv_obj_t *button = lv_button_create(parent);
@@ -774,14 +993,18 @@ void add_rotation_lock_icon(lv_obj_t *button)
 
 void show_control_center_page(uint8_t page)
 {
-    control_center_page_index = page > 0 ? 1 : 0;
+    control_center_page_index = min<uint8_t>(page, 2);
     const bool show_notifications = control_center_page_index == 1;
-    lv_obj_set_flag(control_page, LV_OBJ_FLAG_HIDDEN, show_notifications);
+    const bool show_settings = control_center_page_index == 2;
+    lv_obj_set_flag(control_page, LV_OBJ_FLAG_HIDDEN, control_center_page_index != 0);
     lv_obj_set_flag(notification_page, LV_OBJ_FLAG_HIDDEN, !show_notifications);
-    lv_obj_set_size(control_page_dot, show_notifications ? 8 : 12, show_notifications ? 8 : 12);
-    lv_obj_set_size(notification_page_dot, show_notifications ? 12 : 8, show_notifications ? 12 : 8);
-    lv_obj_set_style_bg_opa(control_page_dot, show_notifications ? LV_OPA_40 : LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_opa(notification_page_dot, show_notifications ? LV_OPA_COVER : LV_OPA_40, 0);
+    lv_obj_set_flag(settings_page, LV_OBJ_FLAG_HIDDEN, !show_settings);
+    for (uint8_t i = 0; i < 3; i++) {
+        lv_obj_t *dot = i == 0 ? control_page_dot : (i == 1 ? notification_page_dot : settings_page_dot);
+        const bool selected = i == control_center_page_index;
+        lv_obj_set_size(dot, selected ? 12 : 8, selected ? 12 : 8);
+        lv_obj_set_style_bg_opa(dot, selected ? LV_OPA_COVER : LV_OPA_40, 0);
+    }
     if (show_notifications) {
         notification_ui_dirty = true;
         refresh_notification_list();
@@ -948,6 +1171,107 @@ void create_control_center()
     lv_obj_set_flex_flow(notification_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(notification_list, 6, 0);
 
+    settings_page = lv_obj_create(control_center);
+    lv_obj_set_width(settings_page, LV_PCT(100));
+    lv_obj_set_flex_grow(settings_page, 1);
+    lv_obj_set_style_bg_opa(settings_page, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(settings_page, 0, 0);
+    lv_obj_set_style_pad_all(settings_page, 0, 0);
+    lv_obj_set_flex_flow(settings_page, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(settings_page, 8, 0);
+    lv_obj_set_scroll_dir(settings_page, LV_DIR_VER);
+    lv_obj_add_flag(settings_page, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *settings_title = lv_label_create(settings_page);
+    lv_label_set_text(settings_title, "Parametres");
+    lv_obj_set_style_text_font(settings_title, &lv_font_montserrat_20, 0);
+
+    lv_obj_t *screen_row = add_settings_row(settings_page, "Veille ecran");
+    screen_timeout_dropdown = lv_dropdown_create(screen_row);
+    lv_dropdown_set_options(screen_timeout_dropdown, "30 s\n1 min\n2 min\n5 min\n10 min");
+    lv_obj_set_width(screen_timeout_dropdown, 120);
+    lv_obj_add_event_cb(screen_timeout_dropdown, screen_timeout_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_t *never_row = add_settings_row(settings_page, "Ecran toujours actif");
+    screen_never_switch = lv_switch_create(never_row);
+    lv_obj_add_event_cb(screen_never_switch, screen_never_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *tz_row = add_settings_row(settings_page, "Fuseau horaire");
+    timezone_dropdown = lv_dropdown_create(tz_row);
+    lv_dropdown_set_options(timezone_dropdown, "Europe/Paris\nUTC\nEurope/London\nAmerica/New_York\nAsia/Tokyo");
+    lv_obj_set_width(timezone_dropdown, 190);
+    lv_obj_add_event_cb(timezone_dropdown, timezone_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_t *ntp_row = add_settings_row(settings_page, "Mise a l'heure Wi-Fi");
+    ntp_switch = lv_switch_create(ntp_row);
+    lv_obj_add_event_cb(ntp_switch, ntp_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *datetime_row = add_settings_row(settings_page, "Date / heure manuelle");
+    lv_obj_set_height(datetime_row, 90);
+    lv_obj_set_flex_flow(datetime_row, LV_FLEX_FLOW_ROW_WRAP);
+    time_t now = time(nullptr);
+    struct tm local = {};
+    localtime_r(&now, &local);
+    manual_date_spinbox = lv_spinbox_create(datetime_row);
+    lv_spinbox_set_range(manual_date_spinbox, 20240101, 20991231);
+    lv_spinbox_set_digit_format(manual_date_spinbox, 8, 0);
+    lv_spinbox_set_value(manual_date_spinbox, (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday);
+    lv_obj_set_width(manual_date_spinbox, 118);
+    lv_obj_t *date_minus = add_button(datetime_row, LV_SYMBOL_MINUS, spinbox_step_cb, nullptr);
+    lv_obj_set_size(date_minus, 38, 38);
+    lv_obj_remove_event_cb(date_minus, spinbox_step_cb);
+    lv_obj_add_event_cb(date_minus, spinbox_step_cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(-1));
+    lv_obj_t *date_plus = add_button(datetime_row, LV_SYMBOL_PLUS, spinbox_step_cb, nullptr);
+    lv_obj_set_size(date_plus, 38, 38);
+    lv_obj_remove_event_cb(date_plus, spinbox_step_cb);
+    lv_obj_add_event_cb(date_plus, spinbox_step_cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(1));
+    manual_time_spinbox = lv_spinbox_create(datetime_row);
+    lv_spinbox_set_range(manual_time_spinbox, 0, 2359);
+    lv_spinbox_set_digit_format(manual_time_spinbox, 4, 0);
+    lv_spinbox_set_value(manual_time_spinbox, local.tm_hour * 100 + local.tm_min);
+    lv_obj_set_width(manual_time_spinbox, 78);
+    lv_obj_t *time_minus = add_button(datetime_row, LV_SYMBOL_MINUS, spinbox_step_cb, nullptr);
+    lv_obj_set_size(time_minus, 38, 38);
+    lv_obj_remove_event_cb(time_minus, spinbox_step_cb);
+    lv_obj_add_event_cb(time_minus, spinbox_step_cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(-2));
+    lv_obj_t *time_plus = add_button(datetime_row, LV_SYMBOL_PLUS, spinbox_step_cb, nullptr);
+    lv_obj_set_size(time_plus, 38, 38);
+    lv_obj_remove_event_cb(time_plus, spinbox_step_cb);
+    lv_obj_add_event_cb(time_plus, spinbox_step_cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(2));
+    lv_obj_t *apply_datetime = add_button(datetime_row, LV_SYMBOL_OK, manual_datetime_apply_cb, nullptr);
+    lv_obj_set_size(apply_datetime, 54, 42);
+
+    lv_obj_t *capacity_row = add_settings_row(settings_page, "Capacite batterie");
+    battery_capacity_dropdown = lv_dropdown_create(capacity_row);
+    lv_dropdown_set_options(battery_capacity_dropdown, "500 mAh\n750 mAh\n1000 mAh\n1500 mAh\n2000 mAh");
+    lv_obj_set_width(battery_capacity_dropdown, 130);
+    const uint16_t capacity = settings.battery.capacity_mah;
+    lv_dropdown_set_selected(battery_capacity_dropdown, capacity <= 500 ? 0 : capacity <= 750 ? 1 : capacity <= 1000 ? 2 : capacity <= 1500 ? 3 : 4);
+    lv_obj_add_event_cb(battery_capacity_dropdown, battery_capacity_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_t *current_row = add_settings_row(settings_page, "Courant de charge");
+    battery_current_dropdown = lv_dropdown_create(current_row);
+    lv_dropdown_set_options(battery_current_dropdown, "100 mA\n200 mA\n300 mA");
+    lv_obj_set_width(battery_current_dropdown, 120);
+    lv_dropdown_set_selected(battery_current_dropdown, settings.battery.charge_current <= 4 ? 0 : settings.battery.charge_current <= 8 ? 1 : 2);
+    lv_obj_add_event_cb(battery_current_dropdown, battery_current_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_t *care_row = add_settings_row(settings_page, "Preserver la batterie (4,1 V)");
+    battery_care_switch = lv_switch_create(care_row);
+    lv_obj_add_event_cb(battery_care_switch, battery_care_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *mic_row = add_settings_row(settings_page, "Micros");
+    microphone_switch = lv_switch_create(mic_row);
+    lv_obj_add_event_cb(microphone_switch, microphone_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    microphone_gain_label = lv_label_create(settings_page);
+    lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %u dB", settings.microphone_gain * 3U);
+    microphone_gain_slider = lv_slider_create(settings_page);
+    lv_obj_set_width(microphone_gain_slider, LV_PCT(100));
+    lv_slider_set_range(microphone_gain_slider, 0, 14);
+    lv_obj_add_event_cb(microphone_gain_slider, microphone_gain_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    output_volume_label = lv_label_create(settings_page);
+    lv_label_set_text_fmt(output_volume_label, "Volume: %u%%", settings.output_volume);
+    output_volume_slider = lv_slider_create(settings_page);
+    lv_obj_set_width(output_volume_slider, LV_PCT(100));
+    lv_slider_set_range(output_volume_slider, 0, 100);
+    lv_obj_add_event_cb(output_volume_slider, output_volume_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
     lv_obj_t *page_indicator = lv_obj_create(control_center);
     lv_obj_set_size(page_indicator, LV_PCT(100), 18);
     lv_obj_set_style_bg_opa(page_indicator, LV_OPA_TRANSP, 0);
@@ -958,7 +1282,8 @@ void create_control_center()
     lv_obj_set_flex_align(page_indicator, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     control_page_dot = lv_obj_create(page_indicator);
     notification_page_dot = lv_obj_create(page_indicator);
-    for (lv_obj_t *dot : {control_page_dot, notification_page_dot}) {
+    settings_page_dot = lv_obj_create(page_indicator);
+    for (lv_obj_t *dot : {control_page_dot, notification_page_dot, settings_page_dot}) {
         lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(dot, lv_color_white(), 0);
         lv_obj_set_style_border_width(dot, 0, 0);
@@ -970,14 +1295,97 @@ void create_control_center()
     refresh_control_center();
 }
 
+void restore_rtc_deadlines_after_wake()
+{
+    if (rtc_system_state.magic != RTC_STATE_MAGIC) {
+        memset(&rtc_system_state, 0, sizeof(rtc_system_state));
+        rtc_system_state.magic = RTC_STATE_MAGIC;
+        return;
+    }
+    if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) return;
+    for (auto &saved : rtc_system_state.jobs) {
+        if (!saved.used) continue;
+        saved.remaining_ms = saved.remaining_ms <= rtc_system_state.requested_sleep_ms
+            ? 0 : saved.remaining_ms - rtc_system_state.requested_sleep_ms;
+    }
+}
+
+void save_rtc_deadlines(uint32_t sleep_ms)
+{
+    rtc_system_state.magic = RTC_STATE_MAGIC;
+    rtc_system_state.requested_sleep_ms = sleep_ms;
+    const uint32_t now = millis();
+    for (uint8_t i = 0; i < MAX_SCHEDULED_JOBS; i++) {
+        const ScheduledJob &job = scheduled_jobs[i];
+        PersistentJobDeadline &saved = rtc_system_state.jobs[i];
+        saved.used = job.used;
+        if (!job.used) continue;
+        saved.app_id = job.app_id;
+        saved.period_ms = job.period_ms;
+        const int32_t remaining = static_cast<int32_t>(job.next_run_ms - now);
+        saved.remaining_ms = remaining <= 0 ? 0 : static_cast<uint32_t>(remaining);
+    }
+}
+
+void configure_sleep_wake_sources(uint32_t wake_ms)
+{
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    const uint64_t gpio_mask = (1ULL << PIN_KEY_PLUS) | (1ULL << PIN_KEY_MINUS) | (1ULL << PIN_TOUCH_INTERRUPT);
+    esp_sleep_enable_ext1_wakeup(gpio_mask, ESP_EXT1_WAKEUP_ANY_LOW);
+    esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(max<uint32_t>(wake_ms, MIN_SLEEP_WAKE_MS)) * 1000ULL);
+}
+
+uint32_t next_background_wake_ms(uint32_t fallback)
+{
+    const uint32_t next_job = waveshare_system_get_next_job_delay_ms();
+    if (next_job == UINT32_MAX) return fallback;
+    return constrain(next_job, MIN_SLEEP_WAKE_MS, fallback);
+}
+
+void enter_connected_light_sleep()
+{
+    connected_sleep_entered = true;
+    waveshare_audio_suspend();
+    // A short timer ceiling lets the CPU poll the AXP2101 PWR-key IRQ.
+    configure_sleep_wake_sources(next_background_wake_ms(MIN_SLEEP_WAKE_MS));
+    Serial.flush();
+    esp_light_sleep_start();
+    const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    connected_sleep_entered = false;
+    if (cause == ESP_SLEEP_WAKEUP_EXT1) {
+        waveshare_audio_resume();
+        waveshare_system_note_user_activity();
+    }
+}
+
+[[noreturn]] void enter_deep_sleep()
+{
+    const uint32_t wake_ms = next_background_wake_ms(DEFAULT_DEEP_SLEEP_WAKE_MS);
+    save_settings();
+    save_rtc_deadlines(wake_ms);
+    waveshare_audio_suspend();
+    lvgl_port_set_display_power(false);
+    WiFi.mode(WIFI_OFF);
+    configure_sleep_wake_sources(wake_ms);
+    Serial.printf("[system] deep sleep for at most %lu ms\n", wake_ms);
+    Serial.flush();
+    esp_deep_sleep_start();
+    abort();
+}
+
 void set_power_state(WaveshareSystemPowerState next)
 {
     if (next == power_state) {
         return;
     }
+    const WaveshareSystemPowerState previous = power_state;
     power_state = next;
     if (power_state == WAVESHARE_SYSTEM_ACTIVE) {
+        connected_sleep_entered = false;
         lvgl_port_set_display_power(true);
+        if (previous == WAVESHARE_SYSTEM_CONNECTED_STANDBY || previous == WAVESHARE_SYSTEM_DEEP_SLEEP_PENDING) {
+            waveshare_audio_resume();
+        }
     } else if (power_state == WAVESHARE_SYSTEM_SCREEN_OFF || power_state == WAVESHARE_SYSTEM_CONNECTED_STANDBY ||
                power_state == WAVESHARE_SYSTEM_DEEP_SLEEP_PENDING) {
         lvgl_port_set_display_power(false);
@@ -1018,7 +1426,8 @@ void update_control_center_touch_gesture()
         control_center_touch_start.y >= slider_area.y1 && control_center_touch_start.y <= slider_area.y2;
     if (started_on_brightness) return;
 
-    show_control_center_page(dx < 0 ? 1 : 0);
+    if (dx < 0 && control_center_page_index < 2) show_control_center_page(control_center_page_index + 1);
+    if (dx > 0 && control_center_page_index > 0) show_control_center_page(control_center_page_index - 1);
 }
 
 void gesture_cb(lv_event_t *event)
@@ -1050,11 +1459,11 @@ void gesture_cb(lv_event_t *event)
             info->start_x >= slider_area.x1 && info->start_x <= slider_area.x2 &&
             info->start_y >= slider_area.y1 && info->start_y <= slider_area.y2;
         if (!started_on_brightness && info->direction == ESP_BROOKESIA_GESTURE_DIR_LEFT) {
-            show_control_center_page(1);
+            if (control_center_page_index < 2) show_control_center_page(control_center_page_index + 1);
             return;
         }
         if (!started_on_brightness && info->direction == ESP_BROOKESIA_GESTURE_DIR_RIGHT) {
-            show_control_center_page(0);
+            if (control_center_page_index > 0) show_control_center_page(control_center_page_index - 1);
             return;
         }
     }
@@ -1157,11 +1566,19 @@ bool waveshare_system_schedule_job(int app_id, uint32_t period_ms, WaveshareSche
                                    void *context, bool run_immediately)
 {
     if (callback == nullptr || period_ms < 1000) return false;
+    uint32_t first_delay = run_immediately ? 0 : period_ms;
+    for (auto &saved : rtc_system_state.jobs) {
+        if (saved.used && saved.app_id == app_id && saved.period_ms == period_ms) {
+            first_delay = saved.remaining_ms;
+            saved.used = false;
+            break;
+        }
+    }
     for (uint8_t i = 0; i < MAX_SCHEDULED_JOBS; i++) {
         ScheduledJob &job = scheduled_jobs[i];
         if (job.used && job.app_id == app_id && job.callback == callback) {
             job.period_ms = period_ms;
-            job.next_run_ms = millis() + (run_immediately ? 0 : period_ms);
+            job.next_run_ms = millis() + first_delay;
             job.context = context;
             return true;
         }
@@ -1170,7 +1587,7 @@ bool waveshare_system_schedule_job(int app_id, uint32_t period_ms, WaveshareSche
             job.running = false;
             job.app_id = app_id;
             job.period_ms = period_ms;
-            job.next_run_ms = millis() + (run_immediately ? 0 : period_ms);
+            job.next_run_ms = millis() + first_delay;
             job.callback = callback;
             job.context = context;
             return true;
@@ -1218,6 +1635,10 @@ bool waveshare_system_ble_is_allowed(void)
     return settings.ble_enabled && !settings.airplane_mode;
 }
 
+bool waveshare_system_microphones_enabled(void) { return settings.microphones_enabled; }
+uint8_t waveshare_system_microphone_gain(void) { return settings.microphone_gain; }
+uint8_t waveshare_system_output_volume(void) { return settings.output_volume; }
+
 bool waveshare_system_acquire_display_lease(const char *)
 {
     if (display_lease_count < UINT8_MAX) display_lease_count++;
@@ -1234,11 +1655,16 @@ bool waveshare_system_begin(ESP_Brookesia_Phone *phone_in)
 {
     phone = phone_in;
     if (phone == nullptr) return false;
+    restore_rtc_deadlines_after_wake();
     load_settings();
     pinMode(PIN_KEY_PLUS, INPUT_PULLUP);
     pinMode(PIN_KEY_MINUS, INPUT_PULLUP);
     lvgl_port_set_brightness(settings.brightness);
     apply_radio_settings();
+    waveshare_audio_begin();
+    waveshare_audio_set_microphone_gain(settings.microphone_gain);
+    waveshare_audio_set_microphones_enabled(settings.microphones_enabled);
+    waveshare_audio_set_output_volume(settings.output_volume);
 #if WAVESHARE_SYSTEM_HAS_PMU
     init_pmu();
 #endif
@@ -1338,6 +1764,7 @@ void waveshare_system_tick(void)
      * reapplying the older idle deadline that preceded the notification. */
     if (notification_wake_active) return;
     if (display_lease_count > 0 || control_center_visible) return;
+    if (settings.screen_never) return;
 
     /* Re-read millis after input processing. A PWR event can update
      * last_user_activity_ms later than the tick's original `now`; subtracting
@@ -1345,10 +1772,10 @@ void waveshare_system_tick(void)
     const uint32_t idle_ms = millis() - last_user_activity_ms;
     if (idle_ms >= DEEP_SLEEP_DELAY_MS) {
         set_power_state(WAVESHARE_SYSTEM_DEEP_SLEEP_PENDING);
-        /* Deliberately no esp_deep_sleep_start here. The PMU power path and wake
-         * sources must be validated on hardware before enabling irreversible sleep. */
+        enter_deep_sleep();
     } else if (idle_ms >= CONNECTED_STANDBY_DELAY_MS) {
         set_power_state(WAVESHARE_SYSTEM_CONNECTED_STANDBY);
+        if (!connected_sleep_entered) enter_connected_light_sleep();
     } else if (idle_ms >= settings.display_off_delay_ms) {
         set_power_state(WAVESHARE_SYSTEM_SCREEN_OFF);
     }
