@@ -704,9 +704,12 @@ void refresh_control_center()
     if (microphone_gain_slider != nullptr) lv_slider_set_value(microphone_gain_slider, settings.microphone_gain, LV_ANIM_OFF);
     if (noise_reduction_label != nullptr) {
         lv_label_set_text(noise_reduction_label, waveshare_audio_noise_reduction_is_ready()
-                          ? "AEC + reduction de bruit active" : "Traitement audio indisponible");
+                          ? "AEC + reduction de bruit active"
+                          : (waveshare_audio_noise_reduction_is_available()
+                             ? "AEC + reduction de bruit a la demande" : "Traitement audio indisponible"));
         lv_obj_set_style_text_color(noise_reduction_label,
-                                    waveshare_audio_noise_reduction_is_ready() ? lv_color_hex(0x38C172) : lv_color_hex(0xE07822), 0);
+                                    waveshare_audio_noise_reduction_is_available()
+                                    ? lv_color_hex(0x38C172) : lv_color_hex(0xE07822), 0);
     }
     if (output_volume_slider != nullptr) lv_slider_set_value(output_volume_slider, settings.output_volume, LV_ANIM_OFF);
     refresh_manual_datetime_labels();

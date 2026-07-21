@@ -67,7 +67,10 @@ provides bounded `read()`/`write()` functions. Muting the microphones powers
 down their ES7210 channels rather than merely discarding samples.
 
 `waveshare_audio_read()` returns mono 16-bit/16 kHz audio processed by the
-Espressif AFE bundled with Arduino-ESP32 3.3.8. Its `MMR` pipeline receives both
+Espressif AFE bundled with Arduino-ESP32 3.3.8. The AFE is created lazily on the
+first read: allocating it at boot while no audio consumer exists wastes scarce
+internal SRAM and can starve LVGL input, timers and scheduled tasks. Its `MMR`
+low-cost pipeline receives both
 microphones plus a reference copied from `waveshare_audio_write()`, and keeps
 AEC, dual-microphone BSS speech enhancement, VAD and conservative AGC active.
 NS is requested too, but Espressif's compatibility check may prioritize the
@@ -76,6 +79,10 @@ send stereo 16-bit/16 kHz playback through
 `waveshare_audio_write()` so AEC receives the exact speaker reference. The
 ES7210 is the multichannel ADC; the effective DSP runs on ESP32-S3 core 0 and
 uses PSRAM rather than being a hidden ES7210 register.
+The port also keeps a 32 KiB internal-SRAM reserve. If the AFE version bundled
+with a future Arduino core cannot respect that reserve, processed capture is
+disabled and raw ES7210 capture remains available instead of destabilizing the
+whole interface.
 
 ## Touch responsiveness
 

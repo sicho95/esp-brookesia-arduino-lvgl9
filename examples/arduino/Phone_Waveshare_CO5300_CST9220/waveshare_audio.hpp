@@ -22,3 +22,4 @@ size_t waveshare_audio_read(void *buffer, size_t bytes);
 size_t waveshare_audio_write(const void *buffer, size_t bytes);
 bool waveshare_audio_is_ready(void);
 bool waveshare_audio_noise_reduction_is_ready(void);
+bool waveshare_audio_noise_reduction_is_available(void);

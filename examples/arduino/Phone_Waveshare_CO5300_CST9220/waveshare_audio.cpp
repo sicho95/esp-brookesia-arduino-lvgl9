@@ -32,6 +32,7 @@ constexpr int PIN_I2S_DOUT = 8;
 constexpr int PIN_SPEAKER_ENABLE = 46;
 constexpr uint32_t AUDIO_SAMPLE_RATE = 16000;
 constexpr size_t PLAYBACK_REFERENCE_SAMPLES = 2048;
+constexpr size_t MIN_INTERNAL_HEAP_AFTER_AFE = 32 * 1024;
 
 I2SClass audio_i2s;
 bool audio_ready = false;
@@ -39,7 +40,7 @@ bool microphones_enabled = true;
 uint8_t microphone_gain = 8; // 24 dB, ES7210 hardware step.
 uint8_t output_volume = 60;
 portMUX_TYPE reference_mux = portMUX_INITIALIZER_UNLOCKED;
-int16_t playback_reference[PLAYBACK_REFERENCE_SAMPLES] = {};
+int16_t *playback_reference = nullptr;
 size_t reference_read_index = 0;
 size_t reference_write_index = 0;
 size_t reference_count = 0;
@@ -75,7 +76,7 @@ void clear_playback_reference()
 
 void push_playback_reference(const int16_t *stereo, size_t frames)
 {
-    if (stereo == nullptr) return;
+    if (stereo == nullptr || playback_reference == nullptr) return;
     portENTER_CRITICAL(&reference_mux);
     for (size_t i = 0; i < frames; i++) {
         const int32_t mono = (static_cast<int32_t>(stereo[i * 2]) + stereo[i * 2 + 1]) / 2;
@@ -89,6 +90,7 @@ void push_playback_reference(const int16_t *stereo, size_t frames)
 
 int16_t pop_playback_reference()
 {
+    if (playback_reference == nullptr) return 0;
     portENTER_CRITICAL(&reference_mux);
     int16_t sample = 0;
     if (reference_count > 0) {
@@ -111,9 +113,11 @@ void destroy_audio_frontend()
     free(afe_raw_stereo);
     free(afe_feed_buffer);
     free(afe_output_cache);
+    free(playback_reference);
     afe_raw_stereo = nullptr;
     afe_feed_buffer = nullptr;
     afe_output_cache = nullptr;
+    playback_reference = nullptr;
     afe_output_bytes = 0;
     afe_output_offset = 0;
 }
@@ -122,10 +126,10 @@ bool init_audio_frontend()
 {
     if (afe_data != nullptr) return true;
     // MMR = two ES7210 microphones plus the exact playback stream as AEC reference.
-    afe_config = afe_config_init("MMR", nullptr, AFE_TYPE_VC, AFE_MODE_HIGH_PERF);
+    afe_config = afe_config_init("MMR", nullptr, AFE_TYPE_VC, AFE_MODE_LOW_COST);
     if (afe_config == nullptr) return false;
     afe_config->aec_init = true;
-    afe_config->aec_mode = AEC_MODE_VOIP_HIGH_PERF;
+    afe_config->aec_mode = AEC_MODE_VOIP_LOW_COST;
     afe_config->se_init = true;
     afe_config->ns_init = true;
     afe_config->vad_init = true;
@@ -157,7 +161,14 @@ bool init_audio_frontend()
     afe_raw_stereo = static_cast<int16_t *>(allocate_audio_buffer(afe_feed_samples * 2 * sizeof(int16_t)));
     afe_feed_buffer = static_cast<int16_t *>(allocate_audio_buffer(afe_feed_samples * 3 * sizeof(int16_t)));
     afe_output_cache = static_cast<int16_t *>(allocate_audio_buffer(afe_fetch_samples * sizeof(int16_t)));
-    if (afe_raw_stereo == nullptr || afe_feed_buffer == nullptr || afe_output_cache == nullptr) {
+    playback_reference = static_cast<int16_t *>(allocate_audio_buffer(PLAYBACK_REFERENCE_SAMPLES * sizeof(int16_t)));
+    if (afe_raw_stereo == nullptr || afe_feed_buffer == nullptr || afe_output_cache == nullptr ||
+            playback_reference == nullptr) {
+        destroy_audio_frontend();
+        return false;
+    }
+    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < MIN_INTERNAL_HEAP_AFTER_AFE) {
+        Serial.println("[audio] AFE disabled: internal SRAM reserve would be exhausted");
         destroy_audio_frontend();
         return false;
     }
@@ -277,12 +288,12 @@ bool waveshare_audio_begin(void)
     digitalWrite(PIN_SPEAKER_ENABLE, speaker_ok ? HIGH : LOW);
     audio_ready = speaker_ok || microphones_ok;
 #if WAVESHARE_AUDIO_HAS_AFE
-    const bool afe_ok = microphones_ok && init_audio_frontend();
+    const bool afe_available = microphones_ok;
 #else
-    const bool afe_ok = false;
+    const bool afe_available = false;
 #endif
     Serial.printf("[audio] ES8311=%s ES7210=%s AFE=%s\n", speaker_ok ? "OK" : "absent",
-                  microphones_ok ? "OK" : "absent", afe_ok ? "OK" : "absent");
+                  microphones_ok ? "OK" : "absent", afe_available ? "deferred" : "absent");
     return audio_ready;
 }
 
@@ -293,7 +304,7 @@ void waveshare_audio_suspend(void)
     digitalWrite(PIN_SPEAKER_ENABLE, LOW);
     set_es7210_power(false);
 #if WAVESHARE_AUDIO_HAS_AFE
-    if (afe_interface != nullptr && afe_data != nullptr) afe_interface->reset_buffer(afe_data);
+    destroy_audio_frontend();
 #endif
     clear_playback_reference();
 }
@@ -310,6 +321,9 @@ bool waveshare_audio_resume(void)
 bool waveshare_audio_set_microphones_enabled(bool enabled)
 {
     microphones_enabled = enabled;
+#if WAVESHARE_AUDIO_HAS_AFE
+    if (!enabled) destroy_audio_frontend();
+#endif
     return set_es7210_power(enabled);
 }
 
@@ -341,6 +355,7 @@ size_t waveshare_audio_read(void *buffer, size_t bytes)
     if (audio_read_mutex != nullptr && xSemaphoreTake(audio_read_mutex, portMAX_DELAY) != pdTRUE) return 0;
     size_t result_bytes = 0;
 #if WAVESHARE_AUDIO_HAS_AFE
+    if (afe_data == nullptr) init_audio_frontend();
     if (afe_data != nullptr) {
         size_t copied = 0;
         uint8_t *destination = static_cast<uint8_t *>(buffer);
@@ -377,6 +392,15 @@ bool waveshare_audio_noise_reduction_is_ready(void)
 {
 #if WAVESHARE_AUDIO_HAS_AFE
     return afe_data != nullptr;
+#else
+    return false;
+#endif
+}
+
+bool waveshare_audio_noise_reduction_is_available(void)
+{
+#if WAVESHARE_AUDIO_HAS_AFE
+    return audio_ready && microphones_enabled;
 #else
     return false;
 #endif
