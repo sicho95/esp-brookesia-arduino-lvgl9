@@ -27,17 +27,6 @@ static Arduino_CO5300 *lcd = nullptr;
 static TouchDrvCST92xx touch;
 static bool touch_ok = false;
 static volatile bool touch_irq_seen = false;
-static constexpr uint8_t TOUCH_QUEUE_SIZE = 16;
-struct TouchSample {
-    lv_point_t point;
-    lv_indev_state_t state;
-};
-static TouchSample touch_queue[TOUCH_QUEUE_SIZE] = {};
-static uint8_t touch_queue_head = 0;
-static uint8_t touch_queue_count = 0;
-static lv_point_t last_touch_point = {};
-static uint32_t last_touch_report_ms = 0;
-static bool last_touch_pressed = false;
 
 static SemaphoreHandle_t lvgl_mux = nullptr;
 static TaskHandle_t lvgl_task_handle = nullptr;
@@ -214,65 +203,11 @@ static void rotate_touch_point(uint16_t raw_x, uint16_t raw_y, lv_point_t *point
     }
 }
 
-static void clear_touch_queue()
-{
-    touch_queue_head = 0;
-    touch_queue_count = 0;
-    last_touch_pressed = false;
-}
-
-static void enqueue_touch_sample(const TouchSample &sample)
-{
-    if (touch_queue_count == TOUCH_QUEUE_SIZE) {
-        touch_queue_head = (touch_queue_head + 1) % TOUCH_QUEUE_SIZE;
-        touch_queue_count--;
-    }
-    const uint8_t tail = (touch_queue_head + touch_queue_count) % TOUCH_QUEUE_SIZE;
-    touch_queue[tail] = sample;
-    touch_queue_count++;
-}
-
-static bool dequeue_touch_sample(TouchSample *sample)
-{
-    if (touch_queue_count == 0 || sample == nullptr) return false;
-    *sample = touch_queue[touch_queue_head];
-    touch_queue_head = (touch_queue_head + 1) % TOUCH_QUEUE_SIZE;
-    touch_queue_count--;
-    return true;
-}
-
-static bool capture_touch_report()
-{
-    if (!touch_ok) return false;
-    const bool irq_active = digitalRead(WAVESHARE_TP_INT) == LOW;
-    if (!touch_irq_seen && !irq_active) return false;
-    touch_irq_seen = false;
-
-    TouchSample sample = {.point = last_touch_point, .state = LV_INDEV_STATE_RELEASED};
-    uint16_t raw_x = 0;
-    uint16_t raw_y = 0;
-    if (cst9220_read_raw_point(&raw_x, &raw_y)) {
-        rotate_touch_point(raw_x, raw_y, &sample.point);
-        sample.state = LV_INDEV_STATE_PRESSED;
-    }
-    enqueue_touch_sample(sample);
-    return true;
-}
-
 static void draw_bitmap(int16_t x, int16_t y, const uint16_t *pixels, int16_t width, int16_t height)
 {
     /* Arduino_GFX only uses the non-const overload for its contiguous QSPI
      * transfer. The display driver does not modify the LVGL buffer. */
     lcd->draw16bitRGBBitmap(x, y, const_cast<uint16_t *>(pixels), width, height);
-}
-
-static void draw_bitmap_responsive(int16_t x, int16_t y, const uint16_t *pixels, int16_t width, int16_t height)
-{
-    for (int16_t row = 0; row < height; row += LVGL_PORT_FLUSH_STRIPE_LINES) {
-        const int16_t lines = min<int16_t>(LVGL_PORT_FLUSH_STRIPE_LINES, height - row);
-        draw_bitmap(x, y + row, pixels + (row * width), width, lines);
-        capture_touch_report();
-    }
 }
 
 static void flush_rotated(const lv_area_t *area, const uint16_t *src)
@@ -290,7 +225,7 @@ static void flush_rotated(const lv_area_t *area, const uint16_t *src)
                 dst[(x * src_h) + (src_h - 1 - y)] = src[(y * src_w) + x];
             }
         }
-        draw_bitmap_responsive(
+        draw_bitmap(
             WAVESHARE_LCD_HEIGHT - 1 - area->y2,
             area->x1,
             dst,
@@ -305,7 +240,7 @@ static void flush_rotated(const lv_area_t *area, const uint16_t *src)
                 dst[((src_h - 1 - y) * src_w) + (src_w - 1 - x)] = src[(y * src_w) + x];
             }
         }
-        draw_bitmap_responsive(
+        draw_bitmap(
             WAVESHARE_LCD_WIDTH - 1 - area->x2,
             WAVESHARE_LCD_HEIGHT - 1 - area->y2,
             dst,
@@ -320,7 +255,7 @@ static void flush_rotated(const lv_area_t *area, const uint16_t *src)
                 dst[((src_w - 1 - x) * src_h) + y] = src[(y * src_w) + x];
             }
         }
-        draw_bitmap_responsive(
+        draw_bitmap(
             area->y1,
             WAVESHARE_LCD_WIDTH - 1 - area->x2,
             dst,
@@ -331,7 +266,7 @@ static void flush_rotated(const lv_area_t *area, const uint16_t *src)
 
     case LV_DISPLAY_ROTATION_0:
     default:
-        draw_bitmap_responsive(area->x1, area->y1, src, src_w, src_h);
+        draw_bitmap(area->x1, area->y1, src, src_w, src_h);
         break;
     }
 }
@@ -341,7 +276,7 @@ static void flush_callback(lv_display_t *display, const lv_area_t *area, uint8_t
     if (lcd != nullptr) {
         const uint16_t *src = reinterpret_cast<uint16_t *>(px_map);
         if (display_rotation == LV_DISPLAY_ROTATION_0 || lvgl_rotation_buf == nullptr) {
-            draw_bitmap_responsive(
+            draw_bitmap(
                 area->x1,
                 area->y1,
                 src,
@@ -398,27 +333,22 @@ static void touchpad_read(lv_indev_t *indev, lv_indev_data_t *data)
         return;
     }
 
-    capture_touch_report();
-    TouchSample sample = {};
-    if (dequeue_touch_sample(&sample)) {
-        data->point = sample.point;
-        data->state = sample.state;
-        data->continue_reading = touch_queue_count > 0;
-        if (sample.state == LV_INDEV_STATE_PRESSED) {
-            last_touch_point = sample.point;
-            last_touch_report_ms = millis();
-            last_touch_pressed = true;
-        } else {
-            last_touch_pressed = false;
-        }
+    const bool irq_active = digitalRead(WAVESHARE_TP_INT) == LOW;
+    if (!touch_irq_seen && !irq_active) {
+        data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
 
-    data->point = last_touch_point;
-    const bool within_release_grace = last_touch_pressed &&
-        (millis() - last_touch_report_ms <= LVGL_PORT_TOUCH_RELEASE_MS);
-    data->state = within_release_grace ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-    if (!within_release_grace) last_touch_pressed = false;
+    touch_irq_seen = false;
+
+    uint16_t raw_x = 0;
+    uint16_t raw_y = 0;
+    if (cst9220_read_raw_point(&raw_x, &raw_y)) {
+        rotate_touch_point(raw_x, raw_y, &data->point);
+        data->state = LV_INDEV_STATE_PRESSED;
+    } else {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
 }
 
 static lv_indev_t *indev_init()
@@ -609,8 +539,6 @@ bool lvgl_port_set_rotation(lv_display_rotation_t rotation)
         return true;
     }
     display_rotation = rotation;
-    clear_touch_queue();
-    touch_irq_seen = false;
 
     /* CO5300 has no true quarter-turn mode. Keeping the panel in its native
      * coordinate system prevents the MADCTL flip from mirroring the logical

@@ -85,25 +85,9 @@ of waiting for the next scheduled handler pass. The task marks the input timer
 ready from normal task context; no LVGL API is called from the ISR. Raw I2C
 reads still occur only when the IRQ flag or active-low INT pin reports data.
 
-CST9220 reports are intermittent while a finger remains down. The port keeps
-the last pressed state for a 35 ms grace period instead of turning every gap
-between reports into a release/repress pair. A 16-entry queue preserves taps
-and motion samples received while LVGL is busy. Because the validated `FULL`
-render mode transfers an entire 480 x 480 frame, the QSPI transfer is divided
-into 16-line stripes and checks the touch controller between stripes. This does
-not change the rendered frame; it prevents a display flush from hiding rapid
-keypad taps. LVGL's `continue_reading` path drains queued samples immediately
-after the flush instead of adding another 5 ms delay per sample.
-
-The 480 x 480 stylesheet samples gestures every 8 ms, accepts a deliberate
-30 px movement and uses wider 28 px side and 48 px top/bottom edge zones. A
-gesture that starts on an active slider remains reserved for that slider, so
-page navigation cannot steal volume, microphone gain or brightness changes.
-
-Keep this acquisition path together when adapting the port. Restoring the
-default 30 ms LVGL input period, removing pressed-state continuity or letting
-the IRQ only set a flag makes short taps, especially numeric-keypad taps, feel
-as though they require a deliberate hold.
+Keep these three pieces together when adapting the port. Restoring the default
+30 ms LVGL input period or letting the IRQ only set a flag makes short taps,
+especially numeric-keypad taps, feel as though they require a deliberate hold.
 
 ## Application API
 
@@ -206,11 +190,6 @@ making writes contiguous. The final transfer goes through the RAM/non-const
 slow overload that writes each pixel separately; the visible symptom is a
 multi-second vertical sweep and an apparently frozen UI while the rest of the
 firmware continues to run.
-
-The bulk transfer is intentionally split into 16-line stripes so the same LVGL
-task can capture CST9220 reports during a full-frame flush. Do not replace it
-with one blocking 480-line transfer unless touch acquisition is moved to a
-separate, correctly synchronized owner of the shared I2C bus.
 
 Keep `LVGL_PORT_RENDER_MODE` as the single board-level choice. `FULL` is the
 validated Waveshare value because it fixes SquareLine partial-redraw artifacts.
