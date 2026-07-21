@@ -52,13 +52,13 @@ constexpr ESP_Brookesia_GestureIndicatorBarData_t ESP_BROOKESIA_PHONE_480_480_DA
 constexpr ESP_Brookesia_GestureData_t ESP_BROOKESIA_PHONE_480_480_DARK_GESTURE_DATA()
 {
     return {
-        .detect_period_ms = 20,
+        .detect_period_ms = 10,
         .threshold = {
-            .direction_vertical = 50,
-            .direction_horizon = 50,
+            .direction_vertical = 36,
+            .direction_horizon = 36,
             .direction_angle = 60,
-            .horizontal_edge = 10,
-            .vertical_edge = 20,
+            .horizontal_edge = 24,
+            .vertical_edge = 44,
             .duration_short_ms = 800,
             .speed_slow_px_per_ms = 0.1,
         },

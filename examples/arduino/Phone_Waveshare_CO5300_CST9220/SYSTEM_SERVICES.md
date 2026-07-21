@@ -87,13 +87,34 @@ whole interface.
 ## Touch responsiveness
 
 The CST9220 shares the board I2C bus at 400 kHz. Its LVGL input timer runs every
-5 ms, and the falling-edge touch IRQ wakes the LVGL task immediately instead
+3 ms, and the falling-edge touch IRQ wakes the LVGL task immediately instead
 of waiting for the next scheduled handler pass. The task marks the input timer
 ready from normal task context; no LVGL API is called from the ISR. Raw I2C
 reads still occur only when the IRQ flag or active-low INT pin reports data.
 
-Keep these three pieces together when adapting the port. Restoring the default
-30 ms LVGL input period or letting the IRQ only set a flag makes short taps,
+The 480 x 480 profile samples Brookesia gestures every 10 ms, recognizes a
+36 px directional movement, and accepts starts in 24 px side or 44 px
+top/bottom edge zones. LVGL cancels an underlying click after 6 px of movement,
+so a quick swipe does not also activate the control below it. Settings sliders
+use a 140 ms hold threshold: a fast swipe crossing one still changes pages,
+while holding then dragging reserves the movement for the slider. A downward
+system swipe can open the control centre from anywhere on the display; it no
+longer depends on starting inside the top-edge zone.
+
+Numeric keypad digits use `LV_EVENT_PRESSED` rather than waiting for the full
+press/release click sequence. This gives immediate visual and data feedback for
+rapid repeated digits without changing normal buttons throughout the system.
+Slider values are persisted only on release instead of writing NVS for every
+pixel of movement.
+
+Status indicators are polled at 500 ms and updated only when their effective
+state changes. The control centre is rebuilt only when its data is dirty, not
+every 20 ms while visible. These rules are essential with the Waveshare `FULL`
+render mode because every unnecessary invalidation can otherwise trigger a
+complete 480 x 480 transfer and block subsequent taps.
+
+Keep these pieces together when adapting the port. Restoring the default 30 ms
+LVGL input period or letting the IRQ only set a flag makes short taps,
 especially numeric-keypad taps, feel as though they require a deliberate hold.
 
 ## Application API

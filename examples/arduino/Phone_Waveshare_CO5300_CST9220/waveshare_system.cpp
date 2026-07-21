@@ -40,6 +40,8 @@ constexpr uint32_t DEEP_SLEEP_DELAY_MS = 20UL * 60UL * 1000UL;
 constexpr uint32_t NOTIFICATION_WAKE_DELAY_MS = 30UL * 1000UL;
 constexpr uint32_t NOTIFICATION_BANNER_DELAY_MS = 12UL * 1000UL;
 constexpr uint32_t SYSTEM_TICK_PERIOD_MS = 20;
+constexpr uint32_t STATUS_REFRESH_PERIOD_MS = 500;
+constexpr uint32_t SLIDER_HOLD_MS = 140;
 constexpr uint32_t PMU_THERMAL_POLL_PERIOD_MS = 5000;
 constexpr uint32_t PMU_IRQ_POLL_PERIOD_MS = 100;
 constexpr uint32_t IMU_POLL_PERIOD_MS = 100;
@@ -158,6 +160,7 @@ Settings settings = {
 WaveshareSystemPowerState power_state = WAVESHARE_SYSTEM_ACTIVE;
 uint32_t last_user_activity_ms = 0;
 uint32_t last_tick_ms = 0;
+uint32_t last_status_refresh_ms = 0;
 uint32_t last_thermal_poll_ms = 0;
 uint32_t last_pmu_irq_poll_ms = 0;
 uint32_t last_pwr_action_ms = 0;
@@ -239,6 +242,10 @@ uint8_t control_center_page_index = 0;
 uint8_t settings_page_index = 0;
 bool control_center_touch_active = false;
 lv_point_t control_center_touch_start = {};
+uint32_t control_center_touch_start_ms = 0;
+lv_obj_t *active_slider = nullptr;
+uint32_t active_slider_press_ms = 0;
+int32_t active_slider_initial_value = 0;
 enum NumericInputTarget : uint8_t { NUMERIC_INPUT_NONE, NUMERIC_INPUT_DATE, NUMERIC_INPUT_TIME };
 NumericInputTarget numeric_input_target = NUMERIC_INPUT_NONE;
 char numeric_input_buffer[9] = {};
@@ -718,6 +725,14 @@ void refresh_control_center()
 
 void refresh_status_indicators()
 {
+    static int last_wifi_state = -2;
+    static int last_radio_state = -1;
+    static int last_battery_percent = -1;
+    static int last_battery_connected = -1;
+    static int last_vbus_present = -1;
+    static int last_notification_count = -1;
+    static int last_badge_mode = -1;
+
     if (phone == nullptr) return;
     ESP_Brookesia_StatusBar *status_bar = phone->getHome().getStatusBar();
     const bool status_bar_visible = status_bar != nullptr && status_bar->checkVisible();
@@ -728,35 +743,52 @@ void refresh_status_indicators()
 
     if (status_bar != nullptr) {
         const bool wifi_connected = wifi_enabled && WiFi.status() == WL_CONNECTED;
-        status_bar->setWifiIconState(!wifi_enabled ? -1 : (wifi_connected ? 3 : 0));
-        status_bar->setWifiIconColor(wifi_connected ? lv_color_hex(0x38C172) : lv_color_white());
-        status_bar->hideBatteryPercent();
+        const int wifi_state = !wifi_enabled ? -1 : (wifi_connected ? 3 : 0);
+        if (wifi_state != last_wifi_state) {
+            last_wifi_state = wifi_state;
+            status_bar->setWifiIconState(wifi_state);
+            status_bar->setWifiIconColor(wifi_connected ? lv_color_hex(0x38C172) : lv_color_white());
+        }
 #if WAVESHARE_SYSTEM_HAS_PMU
-        if (pmu != nullptr && pmu->isBatteryConnect()) {
-            status_bar->setBatteryPercent(false, pmu->getBatteryPercent());
+        const bool battery_connected = pmu != nullptr && pmu->isBatteryConnect();
+        const int battery_percent = battery_connected ? pmu->getBatteryPercent() : -1;
+        const bool vbus_present = battery_connected && pmu->isVbusIn();
+        if (last_battery_connected < 0 || battery_connected != (last_battery_connected == 1) ||
+                battery_percent != last_battery_percent) {
+            last_battery_connected = battery_connected ? 1 : 0;
+            last_battery_percent = battery_percent;
+            status_bar->hideBatteryPercent();
+            if (battery_connected) status_bar->setBatteryPercent(false, battery_percent);
+        }
+        if (last_vbus_present < 0 || vbus_present != (last_vbus_present == 1)) {
+            last_vbus_present = vbus_present ? 1 : 0;
             if (status_charge_icon != nullptr) {
-                lv_obj_set_flag(status_charge_icon, LV_OBJ_FLAG_HIDDEN, !pmu->isVbusIn());
+                lv_obj_set_flag(status_charge_icon, LV_OBJ_FLAG_HIDDEN, !vbus_present);
             }
-        } else if (status_charge_icon != nullptr) {
-            lv_obj_add_flag(status_charge_icon, LV_OBJ_FLAG_HIDDEN);
         }
 #endif
     }
     if (status_radio_icons != nullptr) {
-        if (settings.airplane_mode) {
+        const int radio_state = settings.airplane_mode ? 1 : (ble_enabled ? 2 : 0);
+        if (radio_state != last_radio_state && radio_state == 1) {
             lv_label_set_text(status_radio_icons, LV_SYMBOL_GPS);
             lv_obj_set_style_text_color(status_radio_icons, lv_color_white(), 0);
-        } else if (ble_enabled) {
+        } else if (radio_state != last_radio_state && radio_state == 2) {
             lv_label_set_text(status_radio_icons, LV_SYMBOL_BLUETOOTH);
             /* Arduino's BLE host is intentionally not started yet, so this is
              * white while merely enabled. A future host connection callback
              * will change it to blue only after a real peer connection. */
             lv_obj_set_style_text_color(status_radio_icons, lv_color_white(), 0);
-        } else {
+        } else if (radio_state != last_radio_state) {
             lv_label_set_text(status_radio_icons, "");
         }
+        last_radio_state = radio_state;
     }
-    if (notification_count == 0) {
+    const int badge_mode = settings_fullscreen ? 0 : (status_bar_visible ? 1 : 2);
+    if (notification_count == last_notification_count && badge_mode == last_badge_mode) return;
+    last_notification_count = notification_count;
+    last_badge_mode = badge_mode;
+    if (notification_count == 0 || badge_mode == 0) {
         if (notification_badge != nullptr) lv_obj_add_flag(notification_badge, LV_OBJ_FLAG_HIDDEN);
         if (fullscreen_notification_badge != nullptr) lv_obj_add_flag(fullscreen_notification_badge, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -764,11 +796,11 @@ void refresh_status_indicators()
 
     if (notification_badge != nullptr) {
         lv_label_set_text_fmt(notification_badge_label, LV_SYMBOL_BELL " %u", notification_count);
-        lv_obj_set_flag(notification_badge, LV_OBJ_FLAG_HIDDEN, !status_bar_visible || settings_fullscreen);
+        lv_obj_set_flag(notification_badge, LV_OBJ_FLAG_HIDDEN, badge_mode != 1);
     }
     if (fullscreen_notification_badge != nullptr) {
         lv_label_set_text_fmt(fullscreen_notification_badge_label, LV_SYMBOL_BELL " %u", notification_count);
-        lv_obj_set_flag(fullscreen_notification_badge, LV_OBJ_FLAG_HIDDEN, status_bar_visible || settings_fullscreen);
+        lv_obj_set_flag(fullscreen_notification_badge, LV_OBJ_FLAG_HIDDEN, badge_mode != 2);
     }
 }
 
@@ -810,11 +842,38 @@ void rotation_button_cb(lv_event_t *)
     refresh_control_center();
 }
 
+bool slider_hold_ready(lv_obj_t *slider)
+{
+    return active_slider != slider || millis() - active_slider_press_ms >= SLIDER_HOLD_MS;
+}
+
+void slider_press_cb(lv_event_t *event)
+{
+    lv_obj_t *slider = static_cast<lv_obj_t *>(lv_event_get_target(event));
+    const lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_PRESSED) {
+        active_slider = slider;
+        active_slider_press_ms = millis();
+        active_slider_initial_value = lv_slider_get_value(slider);
+        return;
+    }
+    if (code != LV_EVENT_RELEASED && code != LV_EVENT_PRESS_LOST) return;
+
+    const bool short_motion = active_slider == slider && millis() - active_slider_press_ms < SLIDER_HOLD_MS;
+    active_slider = nullptr;
+    if (short_motion) {
+        lv_slider_set_value(slider, active_slider_initial_value, LV_ANIM_OFF);
+        lv_obj_send_event(slider, LV_EVENT_VALUE_CHANGED, nullptr);
+    }
+    save_settings();
+}
+
 void brightness_cb(lv_event_t *event)
 {
-    settings.brightness = lv_slider_get_value((lv_obj_t *)lv_event_get_target(event));
+    lv_obj_t *slider = static_cast<lv_obj_t *>(lv_event_get_target(event));
+    if (!slider_hold_ready(slider)) return;
+    settings.brightness = lv_slider_get_value(slider);
     lvgl_port_set_brightness(settings.brightness);
-    save_settings();
 }
 
 void settings_button_cb(lv_event_t *)
@@ -1037,18 +1096,20 @@ void microphone_switch_cb(lv_event_t *event)
 
 void microphone_gain_cb(lv_event_t *event)
 {
-    settings.microphone_gain = lv_slider_get_value(static_cast<lv_obj_t *>(lv_event_get_target(event)));
+    lv_obj_t *slider = static_cast<lv_obj_t *>(lv_event_get_target(event));
+    if (!slider_hold_ready(slider)) return;
+    settings.microphone_gain = lv_slider_get_value(slider);
     waveshare_audio_set_microphone_gain(settings.microphone_gain);
     lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %s dB", MICROPHONE_GAIN_NAMES[settings.microphone_gain]);
-    save_settings();
 }
 
 void output_volume_cb(lv_event_t *event)
 {
-    settings.output_volume = lv_slider_get_value(static_cast<lv_obj_t *>(lv_event_get_target(event)));
+    lv_obj_t *slider = static_cast<lv_obj_t *>(lv_event_get_target(event));
+    if (!slider_hold_ready(slider)) return;
+    settings.output_volume = lv_slider_get_value(slider);
     waveshare_audio_set_output_volume(settings.output_volume);
     lv_label_set_text_fmt(output_volume_label, "Volume: %u%%", settings.output_volume);
-    save_settings();
 }
 
 lv_obj_t *add_settings_row(lv_obj_t *parent, const char *title)
@@ -1372,7 +1433,7 @@ void create_numeric_keypad()
         lv_obj_set_grid_cell(button, LV_GRID_ALIGN_STRETCH, i % 3, 1, LV_GRID_ALIGN_STRETCH, i / 3, 1);
         lv_obj_set_style_text_font(button, i == 11 ? &lv_font_montserrat_16 : &lv_font_montserrat_24, 0);
         lv_obj_remove_event_cb(button, numeric_keypad_button_cb);
-        lv_obj_add_event_cb(button, numeric_keypad_button_cb, LV_EVENT_CLICKED,
+        lv_obj_add_event_cb(button, numeric_keypad_button_cb, LV_EVENT_PRESSED,
                             reinterpret_cast<void *>(commands[i]));
     }
     lv_obj_add_flag(numeric_keypad_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -1438,6 +1499,9 @@ void create_control_center()
     brightness_slider = lv_slider_create(control_page);
     lv_obj_set_width(brightness_slider, LV_PCT(100));
     lv_slider_set_range(brightness_slider, 1, 100);
+    lv_obj_add_event_cb(brightness_slider, slider_press_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(brightness_slider, slider_press_cb, LV_EVENT_RELEASED, nullptr);
+    lv_obj_add_event_cb(brightness_slider, slider_press_cb, LV_EVENT_PRESS_LOST, nullptr);
     lv_obj_add_event_cb(brightness_slider, brightness_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
     battery_label = lv_label_create(control_page);
@@ -1525,6 +1589,9 @@ void create_control_center()
     microphone_gain_slider = lv_slider_create(settings_audio_page);
     lv_obj_set_size(microphone_gain_slider, LV_PCT(100), 44);
     lv_slider_set_range(microphone_gain_slider, 0, 14);
+    lv_obj_add_event_cb(microphone_gain_slider, slider_press_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(microphone_gain_slider, slider_press_cb, LV_EVENT_RELEASED, nullptr);
+    lv_obj_add_event_cb(microphone_gain_slider, slider_press_cb, LV_EVENT_PRESS_LOST, nullptr);
     lv_obj_add_event_cb(microphone_gain_slider, microphone_gain_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     noise_reduction_label = lv_label_create(settings_audio_page);
     lv_label_set_text(noise_reduction_label, "AEC + reduction de bruit active");
@@ -1533,6 +1600,9 @@ void create_control_center()
     output_volume_slider = lv_slider_create(settings_audio_page);
     lv_obj_set_size(output_volume_slider, LV_PCT(100), 44);
     lv_slider_set_range(output_volume_slider, 0, 100);
+    lv_obj_add_event_cb(output_volume_slider, slider_press_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(output_volume_slider, slider_press_cb, LV_EVENT_RELEASED, nullptr);
+    lv_obj_add_event_cb(output_volume_slider, slider_press_cb, LV_EVENT_PRESS_LOST, nullptr);
     lv_obj_add_event_cb(output_volume_slider, output_volume_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
     for (lv_obj_t *label : {microphone_gain_label, noise_reduction_label, output_volume_label}) {
@@ -1771,7 +1841,7 @@ bool point_is_inside(lv_obj_t *object, int32_t x, int32_t y, int32_t margin = 0)
 
 bool gesture_started_on_active_slider(int32_t x, int32_t y)
 {
-    if (control_center_page_index == 0) return point_is_inside(brightness_slider, x, y);
+    if (control_center_page_index == 0) return point_is_inside(brightness_slider, x, y, 16);
     if (control_center_page_index == 2 && settings_page_index == 0) {
         return point_is_inside(microphone_gain_slider, x, y, 16) || point_is_inside(output_volume_slider, x, y, 16);
     }
@@ -1793,6 +1863,7 @@ void update_control_center_touch_gesture()
         if (!control_center_touch_active) {
             control_center_touch_active = true;
             control_center_touch_start = point;
+            control_center_touch_start_ms = millis();
         }
         return;
     }
@@ -1803,9 +1874,11 @@ void update_control_center_touch_gesture()
 
     const int dx = point.x - control_center_touch_start.x;
     const int dy = point.y - control_center_touch_start.y;
-    if (abs(dx) < 54 || abs(dx) <= abs(dy)) return;
+    if (abs(dx) < 36 || abs(dx) <= abs(dy)) return;
 
-    if (gesture_started_on_active_slider(control_center_touch_start.x, control_center_touch_start.y)) return;
+    const bool held_slider = gesture_started_on_active_slider(control_center_touch_start.x, control_center_touch_start.y) &&
+                             millis() - control_center_touch_start_ms >= SLIDER_HOLD_MS;
+    if (held_slider) return;
 
     if (control_center_page_index == 2) {
         if (dx < 0 && settings_page_index < 2) show_settings_page(settings_page_index + 1);
@@ -1839,24 +1912,24 @@ void gesture_cb(lv_event_t *event)
             if (info->direction == ESP_BROOKESIA_GESTURE_DIR_UP) hide_numeric_keypad();
             return;
         }
-        if (info->direction == ESP_BROOKESIA_GESTURE_DIR_UP) {
+        const bool held_slider = gesture_started_on_active_slider(info->start_x, info->start_y) &&
+                                 info->duration_ms >= SLIDER_HOLD_MS;
+        if (!held_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_UP) {
             waveshare_system_hide_control_center();
             return;
         }
-        const bool started_on_slider = gesture_started_on_active_slider(info->start_x, info->start_y);
-        if (!started_on_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_LEFT) {
+        if (!held_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_LEFT) {
             if (control_center_page_index == 0) show_control_center_page(1);
             else if (control_center_page_index == 2 && settings_page_index < 2) show_settings_page(settings_page_index + 1);
             return;
         }
-        if (!started_on_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_RIGHT) {
+        if (!held_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_RIGHT) {
             if (control_center_page_index == 1) show_control_center_page(0);
             else if (control_center_page_index == 2 && settings_page_index > 0) show_settings_page(settings_page_index - 1);
             return;
         }
     }
-    if (info != nullptr && (info->start_area & ESP_BROOKESIA_GESTURE_AREA_TOP_EDGE) &&
-            (info->direction == ESP_BROOKESIA_GESTURE_DIR_DOWN)) {
+    if (info != nullptr && info->direction == ESP_BROOKESIA_GESTURE_DIR_DOWN) {
         waveshare_system_show_control_center();
     }
 }
@@ -2131,10 +2204,13 @@ void waveshare_system_tick(void)
         lv_obj_move_foreground(notification_banner);
         lv_obj_clear_flag(notification_banner, LV_OBJ_FLAG_HIDDEN);
     }
-    refresh_status_indicators();
+    if (now - last_status_refresh_ms >= STATUS_REFRESH_PERIOD_MS) {
+        last_status_refresh_ms = now;
+        refresh_status_indicators();
+    }
     update_control_center_touch_gesture();
     handle_buttons();
-    if (control_center_visible || notification_ui_dirty) refresh_control_center();
+    if (notification_ui_dirty) refresh_control_center();
 #if WAVESHARE_SYSTEM_HAS_PMU
     poll_pmu_power_key(now);
     update_pmu_thermal_policy(now);

@@ -363,8 +363,8 @@ static lv_indev_t *indev_init()
     lv_indev_set_read_cb(indev, touchpad_read);
     lv_indev_set_display(indev, lvgl_display);
     lv_timer_set_period(lv_indev_get_read_timer(indev), LVGL_PORT_TOUCH_PERIOD_MS);
-    lv_indev_set_scroll_limit(indev, 8);
-    lv_indev_set_gesture_min_distance(indev, 24);
+    lv_indev_set_scroll_limit(indev, 6);
+    lv_indev_set_gesture_min_distance(indev, 18);
     return indev;
 }
 
