@@ -86,8 +86,8 @@ whole interface.
 
 ## Touch responsiveness
 
-The CST9220 shares the board I2C bus at 400 kHz. Its LVGL input timer runs every
-3 ms, and the falling-edge touch IRQ wakes the LVGL task immediately instead
+The CST9220 shares the board I2C bus at 400 kHz. Its priority-3 LVGL input task
+checks every 2 ms, and the falling-edge touch IRQ wakes it immediately instead
 of waiting for the next scheduled handler pass. The task marks the input timer
 ready from normal task context; no LVGL API is called from the ISR. Raw I2C
 reads still occur only when the IRQ flag or active-low INT pin reports data.
@@ -96,10 +96,16 @@ The 480 x 480 profile samples Brookesia gestures every 10 ms, recognizes a
 36 px directional movement, and accepts starts in 24 px side or 44 px
 top/bottom edge zones. LVGL cancels an underlying click after 6 px of movement,
 so a quick swipe does not also activate the control below it. Settings sliders
-use a 140 ms hold threshold: a fast swipe crossing one still changes pages,
-while holding then dragging reserves the movement for the slider. A downward
+use a 140 ms hold threshold on the current knob: a fast swipe crossing the
+track still changes pages and cannot alter the value, while holding the knob
+then dragging reserves the movement for the slider. A downward
 system swipe can open the control centre from anywhere on the display; it no
 longer depends on starting inside the top-edge zone.
+
+The 480 x 480 stylesheet also enables `enable_gesture_navigation_anywhere`.
+An upward swipe therefore returns from an application even when it did not
+start on the narrow bottom edge, and the same gesture on Home opens recents.
+Other board styles retain Brookesia's edge-only navigation unless they opt in.
 
 Numeric keypad digits use `LV_EVENT_PRESSED` rather than waiting for the full
 press/release click sequence. This gives immediate visual and data feedback for

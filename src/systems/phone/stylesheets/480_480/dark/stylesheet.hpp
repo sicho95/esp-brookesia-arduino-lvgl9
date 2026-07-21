@@ -57,6 +57,7 @@ constexpr ESP_Brookesia_PhoneManagerData_t ESP_BROOKESIA_PHONE_480_480_DARK_MANA
         .flags = {
             .enable_gesture = 1,
             .enable_gesture_navigation_back = 0,
+            .enable_gesture_navigation_anywhere = 1,
             .enable_recents_screen_snapshot_drag = 1,
             .enable_recents_screen_hide_when_no_snapshot = 1,
         },

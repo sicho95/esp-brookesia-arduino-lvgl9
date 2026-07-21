@@ -246,6 +246,7 @@ uint32_t control_center_touch_start_ms = 0;
 lv_obj_t *active_slider = nullptr;
 uint32_t active_slider_press_ms = 0;
 int32_t active_slider_initial_value = 0;
+bool active_slider_knob_grabbed = false;
 enum NumericInputTarget : uint8_t { NUMERIC_INPUT_NONE, NUMERIC_INPUT_DATE, NUMERIC_INPUT_TIME };
 NumericInputTarget numeric_input_target = NUMERIC_INPUT_NONE;
 char numeric_input_buffer[9] = {};
@@ -265,6 +266,7 @@ void hide_numeric_keypad();
 void refresh_manual_datetime_labels();
 void refresh_status_indicators();
 uint8_t screen_timeout_option_index();
+bool point_is_on_slider_knob(lv_obj_t *slider, int32_t x, int32_t y);
 
 #if WAVESHARE_SYSTEM_HAS_PMU
 XPowersAXP2101 *pmu = nullptr;
@@ -844,7 +846,8 @@ void rotation_button_cb(lv_event_t *)
 
 bool slider_hold_ready(lv_obj_t *slider)
 {
-    return active_slider != slider || millis() - active_slider_press_ms >= SLIDER_HOLD_MS;
+    return active_slider != slider ||
+           (active_slider_knob_grabbed && millis() - active_slider_press_ms >= SLIDER_HOLD_MS);
 }
 
 void slider_press_cb(lv_event_t *event)
@@ -855,17 +858,29 @@ void slider_press_cb(lv_event_t *event)
         active_slider = slider;
         active_slider_press_ms = millis();
         active_slider_initial_value = lv_slider_get_value(slider);
+        lv_point_t point = {};
+        lv_indev_t *touch = lvgl_port_get_touch();
+        if (touch != nullptr) lv_indev_get_point(touch, &point);
+        active_slider_knob_grabbed = point_is_on_slider_knob(slider, point.x, point.y);
+        return;
+    }
+    if (code == LV_EVENT_PRESSING) {
+        if (!slider_hold_ready(slider)) {
+            lv_slider_set_value(slider, active_slider_initial_value, LV_ANIM_OFF);
+        }
         return;
     }
     if (code != LV_EVENT_RELEASED && code != LV_EVENT_PRESS_LOST) return;
 
-    const bool short_motion = active_slider == slider && millis() - active_slider_press_ms < SLIDER_HOLD_MS;
+    const bool accepted_drag = active_slider == slider && active_slider_knob_grabbed &&
+                               millis() - active_slider_press_ms >= SLIDER_HOLD_MS;
     active_slider = nullptr;
-    if (short_motion) {
+    active_slider_knob_grabbed = false;
+    if (!accepted_drag) {
         lv_slider_set_value(slider, active_slider_initial_value, LV_ANIM_OFF);
         lv_obj_send_event(slider, LV_EVENT_VALUE_CHANGED, nullptr);
     }
-    save_settings();
+    if (accepted_drag) save_settings();
 }
 
 void brightness_cb(lv_event_t *event)
@@ -1500,6 +1515,7 @@ void create_control_center()
     lv_obj_set_width(brightness_slider, LV_PCT(100));
     lv_slider_set_range(brightness_slider, 1, 100);
     lv_obj_add_event_cb(brightness_slider, slider_press_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(brightness_slider, slider_press_cb, LV_EVENT_PRESSING, nullptr);
     lv_obj_add_event_cb(brightness_slider, slider_press_cb, LV_EVENT_RELEASED, nullptr);
     lv_obj_add_event_cb(brightness_slider, slider_press_cb, LV_EVENT_PRESS_LOST, nullptr);
     lv_obj_add_event_cb(brightness_slider, brightness_cb, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1590,6 +1606,7 @@ void create_control_center()
     lv_obj_set_size(microphone_gain_slider, LV_PCT(100), 44);
     lv_slider_set_range(microphone_gain_slider, 0, 14);
     lv_obj_add_event_cb(microphone_gain_slider, slider_press_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(microphone_gain_slider, slider_press_cb, LV_EVENT_PRESSING, nullptr);
     lv_obj_add_event_cb(microphone_gain_slider, slider_press_cb, LV_EVENT_RELEASED, nullptr);
     lv_obj_add_event_cb(microphone_gain_slider, slider_press_cb, LV_EVENT_PRESS_LOST, nullptr);
     lv_obj_add_event_cb(microphone_gain_slider, microphone_gain_cb, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1601,6 +1618,7 @@ void create_control_center()
     lv_obj_set_size(output_volume_slider, LV_PCT(100), 44);
     lv_slider_set_range(output_volume_slider, 0, 100);
     lv_obj_add_event_cb(output_volume_slider, slider_press_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(output_volume_slider, slider_press_cb, LV_EVENT_PRESSING, nullptr);
     lv_obj_add_event_cb(output_volume_slider, slider_press_cb, LV_EVENT_RELEASED, nullptr);
     lv_obj_add_event_cb(output_volume_slider, slider_press_cb, LV_EVENT_PRESS_LOST, nullptr);
     lv_obj_add_event_cb(output_volume_slider, output_volume_cb, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1839,11 +1857,29 @@ bool point_is_inside(lv_obj_t *object, int32_t x, int32_t y, int32_t margin = 0)
     return x >= area.x1 - margin && x <= area.x2 + margin && y >= area.y1 - margin && y <= area.y2 + margin;
 }
 
+bool point_is_on_slider_knob(lv_obj_t *slider, int32_t x, int32_t y)
+{
+    if (slider == nullptr || lv_obj_has_flag(slider, LV_OBJ_FLAG_HIDDEN)) return false;
+    lv_area_t area = {};
+    lv_obj_get_coords(slider, &area);
+    const int32_t min_value = lv_slider_get_min_value(slider);
+    const int32_t max_value = lv_slider_get_max_value(slider);
+    const int32_t value = lv_slider_get_value(slider);
+    const int32_t width = lv_area_get_width(&area);
+    const int32_t knob_x = area.x1 + ((value - min_value) * width) / max<int32_t>(max_value - min_value, 1);
+    const int32_t knob_y = (area.y1 + area.y2) / 2;
+    const int32_t radius = max<int32_t>(lv_area_get_height(&area) / 2, 14) + 8;
+    const int32_t dx = x - knob_x;
+    const int32_t dy = y - knob_y;
+    return dx * dx + dy * dy <= radius * radius;
+}
+
 bool gesture_started_on_active_slider(int32_t x, int32_t y)
 {
-    if (control_center_page_index == 0) return point_is_inside(brightness_slider, x, y, 16);
+    if (control_center_page_index == 0) return point_is_on_slider_knob(brightness_slider, x, y);
     if (control_center_page_index == 2 && settings_page_index == 0) {
-        return point_is_inside(microphone_gain_slider, x, y, 16) || point_is_inside(output_volume_slider, x, y, 16);
+        return point_is_on_slider_knob(microphone_gain_slider, x, y) ||
+               point_is_on_slider_knob(output_volume_slider, x, y);
     }
     return false;
 }

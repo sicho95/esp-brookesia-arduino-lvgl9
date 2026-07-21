@@ -693,8 +693,10 @@ void ESP_Brookesia_PhoneManager::onGestureNavigationPressingEventCallback(lv_eve
     if ((gesture_info->start_area & (ESP_BROOKESIA_GESTURE_AREA_LEFT_EDGE | ESP_BROOKESIA_GESTURE_AREA_RIGHT_EDGE)) &&
             (gesture_info->direction & ESP_BROOKESIA_GESTURE_DIR_HOR) && manager->_flags.enable_gesture_navigation_back) {
         navigation_type = ESP_BROOKESIA_CORE_NAVIGATE_TYPE_BACK;
-    } else if ((gesture_info->start_area & ESP_BROOKESIA_GESTURE_AREA_BOTTOM_EDGE) && (!gesture_info->flags.short_duration) &&
-               (gesture_info->direction & ESP_BROOKESIA_GESTURE_DIR_UP) && manager->_flags.enable_gesture_navigation_recents_app) {
+    } else if ((manager->data.flags.enable_gesture_navigation_anywhere ||
+                (gesture_info->start_area & ESP_BROOKESIA_GESTURE_AREA_BOTTOM_EDGE)) &&
+               (!gesture_info->flags.short_duration) && (gesture_info->direction & ESP_BROOKESIA_GESTURE_DIR_UP) &&
+               manager->_flags.enable_gesture_navigation_recents_app) {
         // Check if there is a "recents_screen" gesture
         navigation_type = ESP_BROOKESIA_CORE_NAVIGATE_TYPE_RECENTS_SCREEN;
     }
@@ -734,10 +736,13 @@ void ESP_Brookesia_PhoneManager::onGestureNavigationReleaseEventCallback(lv_even
     }
 
     // Check if there is a "home" gesture
-    if ((gesture_info->start_area & ESP_BROOKESIA_GESTURE_AREA_BOTTOM_EDGE) && (gesture_info->flags.short_duration) &&
-            (gesture_info->direction & ESP_BROOKESIA_GESTURE_DIR_UP) && manager->_flags.enable_gesture_navigation_home) {
+    if ((manager->data.flags.enable_gesture_navigation_anywhere ||
+            (gesture_info->start_area & ESP_BROOKESIA_GESTURE_AREA_BOTTOM_EDGE)) &&
+            (gesture_info->flags.short_duration) && (gesture_info->direction & ESP_BROOKESIA_GESTURE_DIR_UP) &&
+            manager->_flags.enable_gesture_navigation_home) {
         navigation_type = ESP_BROOKESIA_CORE_NAVIGATE_TYPE_HOME;
-    } else if ((gesture_info->start_area & ESP_BROOKESIA_GESTURE_AREA_BOTTOM_EDGE) &&
+    } else if ((manager->data.flags.enable_gesture_navigation_anywhere ||
+                (gesture_info->start_area & ESP_BROOKESIA_GESTURE_AREA_BOTTOM_EDGE)) &&
                (gesture_info->direction & ESP_BROOKESIA_GESTURE_DIR_UP) &&
                manager->_flags.enable_gesture_navigation_recents_app && (active_app == nullptr)) {
         navigation_type = ESP_BROOKESIA_CORE_NAVIGATE_TYPE_RECENTS_SCREEN;
