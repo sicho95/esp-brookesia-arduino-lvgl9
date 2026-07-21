@@ -204,7 +204,11 @@ static void onClockUpdateTimerCallback(struct _lv_timer_t *t)
     localtime_r(&now, &timeinfo);
 
     /* Since this callback is called from LVGL task, it is safe to operate LVGL */
-    // Update clock on "Status Bar"
+    // Update date and clock on "Status Bar"
+    ESP_BROOKESIA_CHECK_FALSE_EXIT(
+        phone->getHome().getStatusBar()->setDate(timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900),
+        "Refresh status bar date failed"
+    );
     ESP_BROOKESIA_CHECK_FALSE_EXIT(
         phone->getHome().getStatusBar()->setClock(timeinfo.tm_hour, timeinfo.tm_min),
         "Refresh status bar failed"

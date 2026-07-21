@@ -111,6 +111,7 @@ public:
     bool setWifiIconColor(lv_color_t color, lv_opa_t opacity = LV_OPA_COVER) const;
     // Clock
     bool setClockFormat(ClockFormat format) const;
+    bool setDate(int day, int month, int year) const;
     bool setClock(int hour, int min, bool is_pm) const;
     bool setClock(int hour, int min) const;
 
@@ -167,11 +168,15 @@ private:
     // Wifi
     int _wifi_id;
     // Clock
+    mutable int _clock_day = 1;
+    mutable int _clock_month = 1;
+    mutable int _clock_year = 1970;
     mutable int _clock_hour = 12;
     mutable int _clock_min = 0;
     mutable ClockFormat _clock_format = ClockFormat::FORMAT_24H;
     bool _is_clock_out_of_area;
     ESP_Brookesia_LvObj_t _clock_obj;
+    ESP_Brookesia_LvObj_t _clock_date_label;
     ESP_Brookesia_LvObj_t _clock_hour_label;
     ESP_Brookesia_LvObj_t _clock_dot_label;
     ESP_Brookesia_LvObj_t _clock_min_label;

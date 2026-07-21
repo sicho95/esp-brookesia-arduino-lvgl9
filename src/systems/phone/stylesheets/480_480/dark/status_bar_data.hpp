@@ -13,7 +13,7 @@ constexpr ESP_Brookesia_StatusBarAreaData_t ESP_BROOKESIA_PHONE_480_480_DARK_STA
     return {
         .size = ESP_BROOKESIA_STYLE_SIZE_RECT_PERCENT(w_percent, 100),
         .layout_column_align = align,
-        .layout_column_start_offset = 26,
+        .layout_column_start_offset = 28,
         .layout_column_pad = 4,
     };
 }

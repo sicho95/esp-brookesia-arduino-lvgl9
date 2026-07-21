@@ -27,7 +27,7 @@
 #define WAVESHARE_LCD_HEIGHT           (480)
 
 #define LVGL_PORT_TICK_PERIOD_MS       (2)
-#define LVGL_PORT_TOUCH_PERIOD_MS      (10)
+#define LVGL_PORT_TOUCH_PERIOD_MS      (5)
 #define LVGL_PORT_TASK_MAX_DELAY_MS    (500)
 #define LVGL_PORT_TASK_MIN_DELAY_MS    (2)
 #define LVGL_PORT_TASK_STACK_SIZE      (16 * 1024)

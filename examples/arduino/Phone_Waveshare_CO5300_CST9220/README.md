@@ -42,7 +42,7 @@ Do not copy the library `src` directory into this sketch folder. Install or link
 
 Apps remain paused in the background when returning home. In this Waveshare example, recents use launcher icons instead of live snapshots, the trash icon closes only the currently selected app, and the upward-close gesture is tuned with lower thresholds for the 480 x 480 screen.
 
-The board-specific two-page control centre, dedicated two-page settings screen with numeric date/time entry, notifications, RTC-persisted
+The board-specific two-page control centre, dedicated three-page settings screen with numeric date/time entry, notifications, RTC-persisted
 scheduled jobs, NTP/manual time, keys, real light/deep sleep, display leases,
 battery charging and ES7210/ES8311 audio behavior
 are documented in [SYSTEM_SERVICES.md](./SYSTEM_SERVICES.md). The complete

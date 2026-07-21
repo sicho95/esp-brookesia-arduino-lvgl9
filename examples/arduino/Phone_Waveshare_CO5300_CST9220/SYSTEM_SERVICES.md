@@ -9,8 +9,8 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
 - Swipe down from the top edge to open the control centre. Swipe horizontally
   only between controls and notifications; use the gear button to open the
   separate full-screen settings view. It hides the status bar and places its
-  back arrow at the top-left edge to maximize usable space. Settings use two
-  fixed horizontal pages with their own dots: display/time, then battery/audio.
+  back arrow at the top-left edge to maximize usable space. Settings use three
+  fixed horizontal pages with their own dots: audio, display/time, then battery.
   Swipe upward to close the view. While open, Brookesia
   launcher/navigation gestures are blocked so sliders cannot move the screen
   underneath.
@@ -47,10 +47,12 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
 ## Settings and audio
 
 The dedicated full-screen settings view, opened only with the gear button,
-persists these choices in NVS. It has two non-scrolling horizontal pages and a
+persists these choices in NVS. It has three non-scrolling horizontal pages and a
 dedicated page indicator. This keeps every control comfortably spaced while
 preserving the upward gesture for closing the complete view. Horizontal swipes
-that start on an audio slider are ignored by page navigation:
+that start on or within 16 px of an audio slider are ignored by page navigation.
+The audio page opens first, followed by display/time and the rarely used battery
+profile:
 
 - screen timeout from 30 seconds to 10 minutes, plus an always-on mode;
 - timezone, automatic NTP, and manual date/time;
@@ -78,7 +80,7 @@ uses PSRAM rather than being a hidden ES7210 register.
 ## Touch responsiveness
 
 The CST9220 shares the board I2C bus at 400 kHz. Its LVGL input timer runs every
-10 ms, and the falling-edge touch IRQ wakes the LVGL task immediately instead
+5 ms, and the falling-edge touch IRQ wakes the LVGL task immediately instead
 of waiting for the next scheduled handler pass. The task marks the input timer
 ready from normal task context; no LVGL API is called from the ISR. Raw I2C
 reads still occur only when the IRQ flag or active-low INT pin reports data.
@@ -139,11 +141,11 @@ The current hardware-tested baseline includes:
 - a two-page control centre opened from the status bar, with icon-only Wi-Fi,
   BLE, airplane and rotation-lock controls, brightness, page dots and upward
   close gesture, plus a deliberate gear-button entry to a separate high-contrast
-  settings screen with two fixed pages and a numeric date/time keypad;
+  settings screen with three fixed pages and a numeric date/time keypad;
 - a notification page with a bounded queue, individual deletion, clear-all,
   actionable notifications, a status-bar count and a temporary foreground
   banner;
-- status indicators whose layout does not overlap: notification count, Wi-Fi
+- status indicators whose layout does not overlap: date/time, notification count, Wi-Fi
   off/disconnected/connected, BLE enabled, airplane mode, battery level and USB
   power/charging state;
 - physical-key launcher navigation, a full-tile 115 percent selection scale,

@@ -185,11 +185,13 @@ lv_obj_t *control_center = nullptr;
 lv_obj_t *control_page = nullptr;
 lv_obj_t *notification_page = nullptr;
 lv_obj_t *settings_page = nullptr;
+lv_obj_t *settings_audio_page = nullptr;
 lv_obj_t *settings_general_page = nullptr;
-lv_obj_t *settings_battery_audio_page = nullptr;
+lv_obj_t *settings_battery_page = nullptr;
 lv_obj_t *settings_page_indicator = nullptr;
+lv_obj_t *settings_audio_dot = nullptr;
 lv_obj_t *settings_general_dot = nullptr;
-lv_obj_t *settings_battery_audio_dot = nullptr;
+lv_obj_t *settings_battery_dot = nullptr;
 lv_obj_t *state_label = nullptr;
 lv_obj_t *battery_label = nullptr;
 lv_obj_t *wifi_button_label = nullptr;
@@ -1218,15 +1220,18 @@ void show_control_center_page(uint8_t page)
 
 void show_settings_page(uint8_t page)
 {
-    settings_page_index = page == 1 ? 1 : 0;
+    settings_page_index = min<uint8_t>(page, 2);
+    if (settings_audio_page != nullptr) {
+        lv_obj_set_flag(settings_audio_page, LV_OBJ_FLAG_HIDDEN, settings_page_index != 0);
+    }
     if (settings_general_page != nullptr) {
-        lv_obj_set_flag(settings_general_page, LV_OBJ_FLAG_HIDDEN, settings_page_index != 0);
+        lv_obj_set_flag(settings_general_page, LV_OBJ_FLAG_HIDDEN, settings_page_index != 1);
     }
-    if (settings_battery_audio_page != nullptr) {
-        lv_obj_set_flag(settings_battery_audio_page, LV_OBJ_FLAG_HIDDEN, settings_page_index != 1);
+    if (settings_battery_page != nullptr) {
+        lv_obj_set_flag(settings_battery_page, LV_OBJ_FLAG_HIDDEN, settings_page_index != 2);
     }
-    for (uint8_t i = 0; i < 2; i++) {
-        lv_obj_t *dot = i == 0 ? settings_general_dot : settings_battery_audio_dot;
+    for (uint8_t i = 0; i < 3; i++) {
+        lv_obj_t *dot = i == 0 ? settings_audio_dot : (i == 1 ? settings_general_dot : settings_battery_dot);
         if (dot == nullptr) continue;
         const bool selected = i == settings_page_index;
         lv_obj_set_size(dot, selected ? 12 : 8, selected ? 12 : 8);
@@ -1496,6 +1501,41 @@ void create_control_center()
     lv_obj_set_style_text_font(settings_title, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(settings_title, lv_color_hex(0xE6EDF3), 0);
 
+    settings_audio_page = lv_obj_create(settings_page);
+    lv_obj_set_width(settings_audio_page, LV_PCT(100));
+    lv_obj_set_flex_grow(settings_audio_page, 1);
+    lv_obj_set_style_bg_opa(settings_audio_page, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(settings_audio_page, 0, 0);
+    lv_obj_set_style_pad_all(settings_audio_page, 0, 0);
+    lv_obj_set_flex_flow(settings_audio_page, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(settings_audio_page, 16, 0);
+    lv_obj_remove_flag(settings_audio_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *audio_page_title = lv_label_create(settings_audio_page);
+    lv_label_set_text(audio_page_title, "Son");
+    lv_obj_set_style_text_font(audio_page_title, &lv_font_montserrat_18, 0);
+
+    lv_obj_t *mic_row = add_settings_row(settings_audio_page, "Micros");
+    microphone_switch = lv_switch_create(mic_row);
+    configure_settings_switch(mic_row, microphone_switch, microphone_switch_cb);
+    microphone_gain_label = lv_label_create(settings_audio_page);
+    lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %s dB", MICROPHONE_GAIN_NAMES[settings.microphone_gain]);
+    microphone_gain_slider = lv_slider_create(settings_audio_page);
+    lv_obj_set_size(microphone_gain_slider, LV_PCT(100), 44);
+    lv_slider_set_range(microphone_gain_slider, 0, 14);
+    lv_obj_add_event_cb(microphone_gain_slider, microphone_gain_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    noise_reduction_label = lv_label_create(settings_audio_page);
+    lv_label_set_text(noise_reduction_label, "AEC + reduction de bruit active");
+    output_volume_label = lv_label_create(settings_audio_page);
+    lv_label_set_text_fmt(output_volume_label, "Volume: %u%%", settings.output_volume);
+    output_volume_slider = lv_slider_create(settings_audio_page);
+    lv_obj_set_size(output_volume_slider, LV_PCT(100), 44);
+    lv_slider_set_range(output_volume_slider, 0, 100);
+    lv_obj_add_event_cb(output_volume_slider, output_volume_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    for (lv_obj_t *label : {microphone_gain_label, noise_reduction_label, output_volume_label}) {
+        lv_obj_set_style_text_color(label, lv_color_hex(0xE6EDF3), 0);
+    }
+
     settings_general_page = lv_obj_create(settings_page);
     lv_obj_set_width(settings_general_page, LV_PCT(100));
     lv_obj_set_flex_grow(settings_general_page, 1);
@@ -1505,6 +1545,10 @@ void create_control_center()
     lv_obj_set_flex_flow(settings_general_page, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(settings_general_page, 12, 0);
     lv_obj_remove_flag(settings_general_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(settings_general_page, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *general_page_title = lv_label_create(settings_general_page);
+    lv_label_set_text(general_page_title, "Affichage et heure");
+    lv_obj_set_style_text_font(general_page_title, &lv_font_montserrat_18, 0);
 
     lv_obj_t *screen_row = add_settings_row(settings_general_page, "Veille ecran");
     screen_timeout_dropdown = lv_dropdown_create(screen_row);
@@ -1540,18 +1584,21 @@ void create_control_center()
                         reinterpret_cast<void *>(NUMERIC_INPUT_TIME));
     refresh_manual_datetime_labels();
 
-    settings_battery_audio_page = lv_obj_create(settings_page);
-    lv_obj_set_width(settings_battery_audio_page, LV_PCT(100));
-    lv_obj_set_flex_grow(settings_battery_audio_page, 1);
-    lv_obj_set_style_bg_opa(settings_battery_audio_page, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(settings_battery_audio_page, 0, 0);
-    lv_obj_set_style_pad_all(settings_battery_audio_page, 0, 0);
-    lv_obj_set_flex_flow(settings_battery_audio_page, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(settings_battery_audio_page, 12, 0);
-    lv_obj_remove_flag(settings_battery_audio_page, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(settings_battery_audio_page, LV_OBJ_FLAG_HIDDEN);
+    settings_battery_page = lv_obj_create(settings_page);
+    lv_obj_set_width(settings_battery_page, LV_PCT(100));
+    lv_obj_set_flex_grow(settings_battery_page, 1);
+    lv_obj_set_style_bg_opa(settings_battery_page, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(settings_battery_page, 0, 0);
+    lv_obj_set_style_pad_all(settings_battery_page, 0, 0);
+    lv_obj_set_flex_flow(settings_battery_page, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(settings_battery_page, 16, 0);
+    lv_obj_remove_flag(settings_battery_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(settings_battery_page, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *battery_page_title = lv_label_create(settings_battery_page);
+    lv_label_set_text(battery_page_title, "Batterie");
+    lv_obj_set_style_text_font(battery_page_title, &lv_font_montserrat_18, 0);
 
-    lv_obj_t *capacity_row = add_settings_row(settings_battery_audio_page, "Capacite batterie");
+    lv_obj_t *capacity_row = add_settings_row(settings_battery_page, "Capacite batterie");
     battery_capacity_dropdown = lv_dropdown_create(capacity_row);
     lv_dropdown_set_options(battery_capacity_dropdown, "500 mAh\n750 mAh\n1000 mAh\n1500 mAh\n2000 mAh");
     lv_obj_set_width(battery_capacity_dropdown, 130);
@@ -1559,38 +1606,16 @@ void create_control_center()
     const uint16_t capacity = settings.battery.capacity_mah;
     lv_dropdown_set_selected(battery_capacity_dropdown, capacity <= 500 ? 0 : capacity <= 750 ? 1 : capacity <= 1000 ? 2 : capacity <= 1500 ? 3 : 4);
     lv_obj_add_event_cb(battery_capacity_dropdown, battery_capacity_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_t *current_row = add_settings_row(settings_battery_audio_page, "Courant de charge");
+    lv_obj_t *current_row = add_settings_row(settings_battery_page, "Courant de charge");
     battery_current_dropdown = lv_dropdown_create(current_row);
     lv_dropdown_set_options(battery_current_dropdown, "100 mA\n200 mA\n300 mA");
     lv_obj_set_width(battery_current_dropdown, 120);
     style_settings_dropdown(battery_current_dropdown);
     lv_dropdown_set_selected(battery_current_dropdown, settings.battery.charge_current <= 4 ? 0 : settings.battery.charge_current <= 8 ? 1 : 2);
     lv_obj_add_event_cb(battery_current_dropdown, battery_current_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_t *care_row = add_settings_row(settings_battery_audio_page, "Preserver la batterie (4,1 V)");
+    lv_obj_t *care_row = add_settings_row(settings_battery_page, "Preserver la batterie (4,1 V)");
     battery_care_switch = lv_switch_create(care_row);
     configure_settings_switch(care_row, battery_care_switch, battery_care_cb);
-
-    lv_obj_t *mic_row = add_settings_row(settings_battery_audio_page, "Micros");
-    microphone_switch = lv_switch_create(mic_row);
-    configure_settings_switch(mic_row, microphone_switch, microphone_switch_cb);
-    microphone_gain_label = lv_label_create(settings_battery_audio_page);
-    lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %s dB", MICROPHONE_GAIN_NAMES[settings.microphone_gain]);
-    microphone_gain_slider = lv_slider_create(settings_battery_audio_page);
-    lv_obj_set_width(microphone_gain_slider, LV_PCT(100));
-    lv_slider_set_range(microphone_gain_slider, 0, 14);
-    lv_obj_add_event_cb(microphone_gain_slider, microphone_gain_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    noise_reduction_label = lv_label_create(settings_battery_audio_page);
-    lv_label_set_text(noise_reduction_label, "AEC + reduction de bruit active");
-    output_volume_label = lv_label_create(settings_battery_audio_page);
-    lv_label_set_text_fmt(output_volume_label, "Volume: %u%%", settings.output_volume);
-    output_volume_slider = lv_slider_create(settings_battery_audio_page);
-    lv_obj_set_width(output_volume_slider, LV_PCT(100));
-    lv_slider_set_range(output_volume_slider, 0, 100);
-    lv_obj_add_event_cb(output_volume_slider, output_volume_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-
-    for (lv_obj_t *label : {microphone_gain_label, noise_reduction_label, output_volume_label}) {
-        lv_obj_set_style_text_color(label, lv_color_hex(0xE6EDF3), 0);
-    }
 
     settings_page_indicator = lv_obj_create(settings_page);
     lv_obj_set_size(settings_page_indicator, LV_PCT(100), 18);
@@ -1600,9 +1625,10 @@ void create_control_center()
     lv_obj_set_style_pad_column(settings_page_indicator, 10, 0);
     lv_obj_set_flex_flow(settings_page_indicator, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(settings_page_indicator, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    settings_audio_dot = lv_obj_create(settings_page_indicator);
     settings_general_dot = lv_obj_create(settings_page_indicator);
-    settings_battery_audio_dot = lv_obj_create(settings_page_indicator);
-    for (lv_obj_t *dot : {settings_general_dot, settings_battery_audio_dot}) {
+    settings_battery_dot = lv_obj_create(settings_page_indicator);
+    for (lv_obj_t *dot : {settings_audio_dot, settings_general_dot, settings_battery_dot}) {
         lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(dot, lv_color_white(), 0);
         lv_obj_set_style_border_width(dot, 0, 0);
@@ -1732,19 +1758,19 @@ void set_power_state(WaveshareSystemPowerState next)
     refresh_control_center();
 }
 
-bool point_is_inside(lv_obj_t *object, int32_t x, int32_t y)
+bool point_is_inside(lv_obj_t *object, int32_t x, int32_t y, int32_t margin = 0)
 {
     if (object == nullptr || lv_obj_has_flag(object, LV_OBJ_FLAG_HIDDEN)) return false;
     lv_area_t area = {};
     lv_obj_get_coords(object, &area);
-    return x >= area.x1 && x <= area.x2 && y >= area.y1 && y <= area.y2;
+    return x >= area.x1 - margin && x <= area.x2 + margin && y >= area.y1 - margin && y <= area.y2 + margin;
 }
 
 bool gesture_started_on_active_slider(int32_t x, int32_t y)
 {
     if (control_center_page_index == 0) return point_is_inside(brightness_slider, x, y);
-    if (control_center_page_index == 2 && settings_page_index == 1) {
-        return point_is_inside(microphone_gain_slider, x, y) || point_is_inside(output_volume_slider, x, y);
+    if (control_center_page_index == 2 && settings_page_index == 0) {
+        return point_is_inside(microphone_gain_slider, x, y, 16) || point_is_inside(output_volume_slider, x, y, 16);
     }
     return false;
 }
@@ -1779,8 +1805,8 @@ void update_control_center_touch_gesture()
     if (gesture_started_on_active_slider(control_center_touch_start.x, control_center_touch_start.y)) return;
 
     if (control_center_page_index == 2) {
-        if (dx < 0 && settings_page_index == 0) show_settings_page(1);
-        if (dx > 0 && settings_page_index == 1) show_settings_page(0);
+        if (dx < 0 && settings_page_index < 2) show_settings_page(settings_page_index + 1);
+        if (dx > 0 && settings_page_index > 0) show_settings_page(settings_page_index - 1);
         return;
     }
     if (dx < 0 && control_center_page_index == 0) show_control_center_page(1);
@@ -1817,12 +1843,12 @@ void gesture_cb(lv_event_t *event)
         const bool started_on_slider = gesture_started_on_active_slider(info->start_x, info->start_y);
         if (!started_on_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_LEFT) {
             if (control_center_page_index == 0) show_control_center_page(1);
-            else if (control_center_page_index == 2 && settings_page_index == 0) show_settings_page(1);
+            else if (control_center_page_index == 2 && settings_page_index < 2) show_settings_page(settings_page_index + 1);
             return;
         }
         if (!started_on_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_RIGHT) {
             if (control_center_page_index == 1) show_control_center_page(0);
-            else if (control_center_page_index == 2 && settings_page_index == 1) show_settings_page(0);
+            else if (control_center_page_index == 2 && settings_page_index > 0) show_settings_page(settings_page_index - 1);
             return;
         }
     }

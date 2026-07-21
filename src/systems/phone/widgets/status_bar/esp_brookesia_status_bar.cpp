@@ -567,6 +567,7 @@ bool ESP_Brookesia_StatusBar::setWifiIconColor(lv_color_t color, lv_opa_t opacit
 bool ESP_Brookesia_StatusBar::beginClock(void)
 {
     ESP_Brookesia_LvObj_t clock_obj = nullptr;
+    ESP_Brookesia_LvObj_t clock_date_label = nullptr;
     ESP_Brookesia_LvObj_t clock_hour_label = nullptr;
     ESP_Brookesia_LvObj_t clock_dot_label = nullptr;
     ESP_Brookesia_LvObj_t clock_min_label = nullptr;
@@ -578,6 +579,12 @@ bool ESP_Brookesia_StatusBar::beginClock(void)
     /* Create objects */
     clock_obj = ESP_BROOKESIA_LV_OBJ(obj, _area_objs[_data.clock.area_index].get());
     ESP_BROOKESIA_CHECK_NULL_RETURN(clock_obj, false, "Alloc clock object failed");
+
+    clock_date_label = ESP_BROOKESIA_LV_OBJ(label, clock_obj.get());
+    ESP_BROOKESIA_CHECK_NULL_RETURN(clock_date_label, false, "Alloc clock date label failed");
+    lv_obj_add_style(clock_date_label.get(), _core.getCoreHome().getCoreContainerStyle(), 0);
+    lv_label_set_text_fmt(clock_date_label.get(), "%02d-%02d-%04d ", _clock_day, _clock_month, _clock_year);
+    lv_obj_add_flag(clock_date_label.get(), LV_OBJ_FLAG_HIDDEN);
 
     clock_hour_label = ESP_BROOKESIA_LV_OBJ(label, clock_obj.get());
     ESP_BROOKESIA_CHECK_NULL_RETURN(clock_hour_label, false, "Alloc clock hour label failed");
@@ -605,6 +612,7 @@ bool ESP_Brookesia_StatusBar::beginClock(void)
     lv_obj_clear_flag(clock_obj.get(), LV_OBJ_FLAG_SCROLLABLE);
 
     _clock_obj = clock_obj;
+    _clock_date_label = clock_date_label;
     _clock_hour_label = clock_hour_label;
     _clock_dot_label = clock_dot_label;
     _clock_min_label = clock_min_label;
@@ -636,6 +644,8 @@ bool ESP_Brookesia_StatusBar::updateClockByNewData(void)
         lv_obj_add_flag(_clock_obj.get(), LV_OBJ_FLAG_HIDDEN);
         ESP_BROOKESIA_LOGE("Clock out of area, hide it");
     } else {
+        lv_obj_set_style_text_color(_clock_date_label.get(), lv_color_hex(_data.main.text_color.color), 0);
+        lv_obj_set_style_text_opa(_clock_date_label.get(), _data.main.text_color.opacity, 0);
         lv_obj_set_style_text_color(_clock_hour_label.get(), lv_color_hex(_data.main.text_color.color), 0);
         lv_obj_set_style_text_opa(_clock_hour_label.get(), _data.main.text_color.opacity, 0);
         lv_obj_set_style_text_color(_clock_min_label.get(), lv_color_hex(_data.main.text_color.color), 0);
@@ -658,11 +668,34 @@ bool ESP_Brookesia_StatusBar::delClock(void)
     }
 
     _clock_obj.reset();
+    _clock_date_label.reset();
     _clock_hour_label.reset();
     _clock_dot_label.reset();
     _clock_min_label.reset();
     _clock_period_label.reset();
 
+    return true;
+}
+
+bool ESP_Brookesia_StatusBar::setDate(int day, int month, int year) const
+{
+    ESP_BROOKESIA_LOGD("Set date(%02d-%02d-%04d)", day, month, year);
+    ESP_BROOKESIA_CHECK_NULL_RETURN(_clock_date_label, false, "Invalid clock date label");
+
+    day = max(min(day, 31), 1);
+    month = max(min(month, 12), 1);
+    year = max(min(year, 2099), 1970);
+    if (_clock_day == day && _clock_month == month && _clock_year == year) return true;
+    _clock_day = day;
+    _clock_month = month;
+    _clock_year = year;
+    lv_label_set_text_fmt(_clock_date_label.get(), "%02d-%02d-%04d ", day, month, year);
+    lv_obj_clear_flag(_clock_date_label.get(), LV_OBJ_FLAG_HIDDEN);
+    lv_obj_update_layout(_clock_obj.get());
+    if (esp_brookesia_core_utils_check_obj_out_of_parent(_clock_obj.get())) {
+        lv_obj_add_flag(_clock_date_label.get(), LV_OBJ_FLAG_HIDDEN);
+        ESP_BROOKESIA_LOGW("Date does not fit status bar area, keep clock only");
+    }
     return true;
 }
 
