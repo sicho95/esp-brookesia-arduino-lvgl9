@@ -19,6 +19,8 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
   Airplane mode stops Wi-Fi globally and makes BLE unavailable to application
   transports through `waveshare_system_ble_is_allowed()`. BLE applications own
   the clean start/stop lifecycle of their NimBLE or Bluedroid host stack.
+- Settings switches use a 68 x 38 px target and keep their native drag gesture.
+  Tapping either the switch or the rest of its settings row toggles it directly.
 - With rotation unlocked, turn the device. The QMI8658 changes the software
   display/touch orientation only after four stable samples. The initial upright
   orientation remains the validated 270 degree CO5300 port orientation.
@@ -72,6 +74,18 @@ send stereo 16-bit/16 kHz playback through
 `waveshare_audio_write()` so AEC receives the exact speaker reference. The
 ES7210 is the multichannel ADC; the effective DSP runs on ESP32-S3 core 0 and
 uses PSRAM rather than being a hidden ES7210 register.
+
+## Touch responsiveness
+
+The CST9220 shares the board I2C bus at 400 kHz. Its LVGL input timer runs every
+10 ms, and the falling-edge touch IRQ wakes the LVGL task immediately instead
+of waiting for the next scheduled handler pass. The task marks the input timer
+ready from normal task context; no LVGL API is called from the ISR. Raw I2C
+reads still occur only when the IRQ flag or active-low INT pin reports data.
+
+Keep these three pieces together when adapting the port. Restoring the default
+30 ms LVGL input period or letting the IRQ only set a flag makes short taps,
+especially numeric-keypad taps, feel as though they require a deliberate hold.
 
 ## Application API
 

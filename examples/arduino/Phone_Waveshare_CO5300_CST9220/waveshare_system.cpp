@@ -1063,6 +1063,28 @@ lv_obj_t *add_settings_row(lv_obj_t *parent, const char *title)
     return row;
 }
 
+void settings_switch_row_click_cb(lv_event_t *event)
+{
+    if (lv_event_get_target(event) != lv_event_get_current_target(event)) return;
+    lv_obj_t *settings_switch = static_cast<lv_obj_t *>(lv_event_get_user_data(event));
+    if (settings_switch == nullptr) return;
+    if (lv_obj_has_state(settings_switch, LV_STATE_CHECKED)) {
+        lv_obj_remove_state(settings_switch, LV_STATE_CHECKED);
+    } else {
+        lv_obj_add_state(settings_switch, LV_STATE_CHECKED);
+    }
+    lv_obj_send_event(settings_switch, LV_EVENT_VALUE_CHANGED, nullptr);
+}
+
+void configure_settings_switch(lv_obj_t *row, lv_obj_t *settings_switch, lv_event_cb_t value_changed_cb)
+{
+    lv_obj_set_height(row, 56);
+    lv_obj_set_size(settings_switch, 68, 38);
+    lv_obj_add_event_cb(settings_switch, value_changed_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(row, settings_switch_row_click_cb, LV_EVENT_CLICKED, settings_switch);
+}
+
 void style_settings_control(lv_obj_t *control)
 {
     if (control == nullptr) return;
@@ -1492,7 +1514,7 @@ void create_control_center()
     lv_obj_add_event_cb(screen_timeout_dropdown, screen_timeout_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     lv_obj_t *never_row = add_settings_row(settings_general_page, "Ecran toujours actif");
     screen_never_switch = lv_switch_create(never_row);
-    lv_obj_add_event_cb(screen_never_switch, screen_never_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    configure_settings_switch(never_row, screen_never_switch, screen_never_cb);
 
     lv_obj_t *tz_row = add_settings_row(settings_general_page, "Fuseau horaire");
     timezone_dropdown = lv_dropdown_create(tz_row);
@@ -1502,7 +1524,7 @@ void create_control_center()
     lv_obj_add_event_cb(timezone_dropdown, timezone_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     lv_obj_t *ntp_row = add_settings_row(settings_general_page, "Mise a l'heure Wi-Fi");
     ntp_switch = lv_switch_create(ntp_row);
-    lv_obj_add_event_cb(ntp_switch, ntp_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    configure_settings_switch(ntp_row, ntp_switch, ntp_cb);
 
     lv_obj_t *datetime_row = add_settings_row(settings_general_page, "Date / heure");
     lv_obj_set_height(datetime_row, 60);
@@ -1546,11 +1568,11 @@ void create_control_center()
     lv_obj_add_event_cb(battery_current_dropdown, battery_current_cb, LV_EVENT_VALUE_CHANGED, nullptr);
     lv_obj_t *care_row = add_settings_row(settings_battery_audio_page, "Preserver la batterie (4,1 V)");
     battery_care_switch = lv_switch_create(care_row);
-    lv_obj_add_event_cb(battery_care_switch, battery_care_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    configure_settings_switch(care_row, battery_care_switch, battery_care_cb);
 
     lv_obj_t *mic_row = add_settings_row(settings_battery_audio_page, "Micros");
     microphone_switch = lv_switch_create(mic_row);
-    lv_obj_add_event_cb(microphone_switch, microphone_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    configure_settings_switch(mic_row, microphone_switch, microphone_switch_cb);
     microphone_gain_label = lv_label_create(settings_battery_audio_page);
     lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %s dB", MICROPHONE_GAIN_NAMES[settings.microphone_gain]);
     microphone_gain_slider = lv_slider_create(settings_battery_audio_page);

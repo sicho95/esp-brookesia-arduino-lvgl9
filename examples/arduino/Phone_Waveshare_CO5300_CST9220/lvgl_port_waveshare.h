@@ -10,6 +10,7 @@
 
 #define WAVESHARE_I2C_SDA              (15)
 #define WAVESHARE_I2C_SCL              (14)
+#define WAVESHARE_I2C_FREQUENCY        (400000)
 
 #define WAVESHARE_LCD_CS               (12)
 #define WAVESHARE_LCD_SCLK             (38)
@@ -26,6 +27,7 @@
 #define WAVESHARE_LCD_HEIGHT           (480)
 
 #define LVGL_PORT_TICK_PERIOD_MS       (2)
+#define LVGL_PORT_TOUCH_PERIOD_MS      (10)
 #define LVGL_PORT_TASK_MAX_DELAY_MS    (500)
 #define LVGL_PORT_TASK_MIN_DELAY_MS    (2)
 #define LVGL_PORT_TASK_STACK_SIZE      (16 * 1024)

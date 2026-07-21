@@ -42,6 +42,11 @@ static lv_display_rotation_t display_rotation = WAVESHARE_DISPLAY_ROTATION;
 static void IRAM_ATTR touch_irq_cb()
 {
     touch_irq_seen = true;
+    if (lvgl_task_handle != nullptr) {
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        vTaskNotifyGiveFromISR(lvgl_task_handle, &higher_priority_task_woken);
+        if (higher_priority_task_woken == pdTRUE) portYIELD_FROM_ISR();
+    }
 }
 
 static bool lcd_init()
@@ -90,7 +95,7 @@ static bool lcd_init()
 
 static bool touch_init()
 {
-    Wire.begin(WAVESHARE_I2C_SDA, WAVESHARE_I2C_SCL);
+    Wire.begin(WAVESHARE_I2C_SDA, WAVESHARE_I2C_SCL, WAVESHARE_I2C_FREQUENCY);
 
     pinMode(WAVESHARE_TP_INT, INPUT_PULLUP);
     pinMode(WAVESHARE_TP_RST, OUTPUT);
@@ -357,6 +362,9 @@ static lv_indev_t *indev_init()
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touchpad_read);
     lv_indev_set_display(indev, lvgl_display);
+    lv_timer_set_period(lv_indev_get_read_timer(indev), LVGL_PORT_TOUCH_PERIOD_MS);
+    lv_indev_set_scroll_limit(indev, 8);
+    lv_indev_set_gesture_min_distance(indev, 24);
     return indev;
 }
 
@@ -391,9 +399,13 @@ static void lvgl_port_task(void *arg)
     (void)arg;
     ESP_LOGI(TAG, "Starting LVGL task");
 
-    uint32_t task_delay_ms = LVGL_PORT_TASK_MAX_DELAY_MS;
+    uint32_t task_delay_ms = LVGL_PORT_TASK_MIN_DELAY_MS;
     while (true) {
+        const bool touch_notified = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(task_delay_ms)) > 0;
         if (lvgl_port_lock(-1)) {
+            if (touch_notified && lvgl_touch != nullptr) {
+                lv_timer_ready(lv_indev_get_read_timer(lvgl_touch));
+            }
             task_delay_ms = lv_timer_handler();
             lvgl_port_unlock();
         }
@@ -402,7 +414,6 @@ static void lvgl_port_task(void *arg)
         } else if (task_delay_ms < LVGL_PORT_TASK_MIN_DELAY_MS) {
             task_delay_ms = LVGL_PORT_TASK_MIN_DELAY_MS;
         }
-        vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
     }
 }
 
