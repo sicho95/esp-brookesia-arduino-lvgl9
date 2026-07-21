@@ -9,8 +9,9 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
 - Swipe down from the top edge to open the control centre. Swipe horizontally
   only between controls and notifications; use the gear button to open the
   separate full-screen settings view. It hides the status bar and places its
-  back arrow at the top-left edge to maximize usable space. Swipe upward to
-  close it. While open, Brookesia
+  back arrow at the top-left edge to maximize usable space. Settings use two
+  fixed horizontal pages with their own dots: display/time, then battery/audio.
+  Swipe upward to close the view. While open, Brookesia
   launcher/navigation gestures are blocked so sliders cannot move the screen
   underneath.
 - Toggle Wi-Fi, BLE, airplane mode and rotation-lock preference, then change brightness.
@@ -35,16 +36,19 @@ AXP2101 PMU, physical keys and their safe wake sources belong to this board port
   or cleared together from the notifications page.
 - When Wi-Fi is connected by an application, the service synchronises system
   time using NTP and the selected timezone. Europe/Paris remains the default.
-  NTP can be disabled and date/time can be set manually from settings.
+  NTP can be disabled and date/time can be set manually with the full-screen
+  numeric keypad. Its first digit replaces the displayed value; Validate
+  applies the value and returns to settings.
 - Short PWR moves an active device to connected standby and wakes it from a
   screen-off state. Long PWR saves settings and requests an AXP2101 shutdown.
 
 ## Settings and audio
 
 The dedicated full-screen settings view, opened only with the gear button,
-persists these choices in NVS. It is intentionally excluded from horizontal
-page gestures so an ordinary controls/notifications swipe cannot modify a
-setting by mistake:
+persists these choices in NVS. It has two non-scrolling horizontal pages and a
+dedicated page indicator. This keeps every control comfortably spaced while
+preserving the upward gesture for closing the complete view. Horizontal swipes
+that start on an audio slider are ignored by page navigation:
 
 - screen timeout from 30 seconds to 10 minutes, plus an always-on mode;
 - timezone, automatic NTP, and manual date/time;
@@ -121,7 +125,7 @@ The current hardware-tested baseline includes:
 - a two-page control centre opened from the status bar, with icon-only Wi-Fi,
   BLE, airplane and rotation-lock controls, brightness, page dots and upward
   close gesture, plus a deliberate gear-button entry to a separate high-contrast
-  settings screen;
+  settings screen with two fixed pages and a numeric date/time keypad;
 - a notification page with a bounded queue, individual deletion, clear-all,
   actionable notifications, a status-bar count and a temporary foreground
   banner;

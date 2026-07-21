@@ -185,6 +185,11 @@ lv_obj_t *control_center = nullptr;
 lv_obj_t *control_page = nullptr;
 lv_obj_t *notification_page = nullptr;
 lv_obj_t *settings_page = nullptr;
+lv_obj_t *settings_general_page = nullptr;
+lv_obj_t *settings_battery_audio_page = nullptr;
+lv_obj_t *settings_page_indicator = nullptr;
+lv_obj_t *settings_general_dot = nullptr;
+lv_obj_t *settings_battery_audio_dot = nullptr;
 lv_obj_t *state_label = nullptr;
 lv_obj_t *battery_label = nullptr;
 lv_obj_t *wifi_button_label = nullptr;
@@ -205,8 +210,11 @@ lv_obj_t *screen_timeout_dropdown = nullptr;
 lv_obj_t *screen_never_switch = nullptr;
 lv_obj_t *timezone_dropdown = nullptr;
 lv_obj_t *ntp_switch = nullptr;
-lv_obj_t *manual_date_spinbox = nullptr;
-lv_obj_t *manual_time_spinbox = nullptr;
+lv_obj_t *manual_date_button_label = nullptr;
+lv_obj_t *manual_time_button_label = nullptr;
+lv_obj_t *numeric_keypad_overlay = nullptr;
+lv_obj_t *numeric_keypad_title = nullptr;
+lv_obj_t *numeric_keypad_value = nullptr;
 lv_obj_t *battery_capacity_dropdown = nullptr;
 lv_obj_t *battery_current_dropdown = nullptr;
 lv_obj_t *battery_care_switch = nullptr;
@@ -226,8 +234,14 @@ lv_obj_t *notification_banner = nullptr;
 lv_obj_t *notification_banner_title = nullptr;
 lv_obj_t *notification_banner_message = nullptr;
 uint8_t control_center_page_index = 0;
+uint8_t settings_page_index = 0;
 bool control_center_touch_active = false;
 lv_point_t control_center_touch_start = {};
+enum NumericInputTarget : uint8_t { NUMERIC_INPUT_NONE, NUMERIC_INPUT_DATE, NUMERIC_INPUT_TIME };
+NumericInputTarget numeric_input_target = NUMERIC_INPUT_NONE;
+char numeric_input_buffer[9] = {};
+uint8_t numeric_input_length = 0;
+bool numeric_input_replace_on_digit = false;
 int notification_banner_app_id = -1;
 uint32_t notification_banner_deadline_ms = 0;
 NotificationEntry pending_banner_notification = {};
@@ -237,6 +251,9 @@ portMUX_TYPE service_mux = portMUX_INITIALIZER_UNLOCKED;
 
 void set_power_state(WaveshareSystemPowerState next);
 void show_control_center_page(uint8_t page);
+void show_settings_page(uint8_t page);
+void hide_numeric_keypad();
+void refresh_manual_datetime_labels();
 void refresh_status_indicators();
 uint8_t screen_timeout_option_index();
 
@@ -690,6 +707,7 @@ void refresh_control_center()
                                     waveshare_audio_noise_reduction_is_ready() ? lv_color_hex(0x38C172) : lv_color_hex(0xE07822), 0);
     }
     if (output_volume_slider != nullptr) lv_slider_set_value(output_volume_slider, settings.output_volume, LV_ANIM_OFF);
+    refresh_manual_datetime_labels();
     refresh_notification_list();
 }
 
@@ -796,11 +814,13 @@ void brightness_cb(lv_event_t *event)
 
 void settings_button_cb(lv_event_t *)
 {
+    show_settings_page(0);
     show_control_center_page(2);
 }
 
 void settings_back_cb(lv_event_t *)
 {
+    hide_numeric_keypad();
     show_control_center_page(0);
 }
 
@@ -842,36 +862,138 @@ void ntp_cb(lv_event_t *event)
     save_settings();
 }
 
-void manual_datetime_apply_cb(lv_event_t *)
+void refresh_manual_datetime_labels()
 {
-    const int32_t date_value = lv_spinbox_get_value(manual_date_spinbox);
-    const int32_t time_value = lv_spinbox_get_value(manual_time_spinbox);
-    struct tm value = {};
-    value.tm_year = date_value / 10000 - 1900;
-    value.tm_mon = (date_value / 100) % 100 - 1;
-    value.tm_mday = date_value % 100;
-    value.tm_hour = time_value / 100;
-    value.tm_min = time_value % 100;
-    value.tm_sec = 0;
-    value.tm_isdst = -1;
-    if (value.tm_mon < 0 || value.tm_mon > 11 || value.tm_mday < 1 || value.tm_mday > 31 ||
-        value.tm_hour > 23 || value.tm_min > 59) {
-        waveshare_system_post_notification(-1, "Date et heure", "Valeur invalide");
-        return;
+    time_t now = time(nullptr);
+    struct tm local = {};
+    localtime_r(&now, &local);
+    if (manual_date_button_label != nullptr) {
+        lv_label_set_text_fmt(manual_date_button_label, "%04d-%02d-%02d",
+                              local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
     }
-    const time_t epoch = mktime(&value);
-    struct timeval tv = {.tv_sec = epoch, .tv_usec = 0};
-    settimeofday(&tv, nullptr);
-    time_synchronized = true;
-    waveshare_system_post_notification(-1, "Date et heure", "Reglage manuel applique");
+    if (manual_time_button_label != nullptr) {
+        lv_label_set_text_fmt(manual_time_button_label, "%02d:%02d", local.tm_hour, local.tm_min);
+    }
 }
 
-void spinbox_step_cb(lv_event_t *event)
+void hide_numeric_keypad()
+{
+    numeric_input_target = NUMERIC_INPUT_NONE;
+    numeric_input_length = 0;
+    numeric_input_replace_on_digit = false;
+    if (numeric_keypad_overlay != nullptr) lv_obj_add_flag(numeric_keypad_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+void refresh_numeric_keypad_value()
+{
+    if (numeric_keypad_value == nullptr) return;
+    lv_label_set_text(numeric_keypad_value, numeric_input_length == 0 ? "-" : numeric_input_buffer);
+}
+
+void show_numeric_keypad_cb(lv_event_t *event)
+{
+    numeric_input_target = static_cast<NumericInputTarget>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    time_t now = time(nullptr);
+    struct tm local = {};
+    localtime_r(&now, &local);
+    if (numeric_input_target == NUMERIC_INPUT_DATE) {
+        snprintf(numeric_input_buffer, sizeof(numeric_input_buffer), "%04d%02d%02d",
+                 local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
+        numeric_input_length = 8;
+        lv_label_set_text(numeric_keypad_title, "Date (AAAAMMJJ)");
+    } else {
+        snprintf(numeric_input_buffer, sizeof(numeric_input_buffer), "%02d%02d", local.tm_hour, local.tm_min);
+        numeric_input_length = 4;
+        lv_label_set_text(numeric_keypad_title, "Heure (HHMM)");
+    }
+    numeric_input_replace_on_digit = true;
+    lv_obj_set_style_text_color(numeric_keypad_value, lv_color_white(), 0);
+    refresh_numeric_keypad_value();
+    lv_obj_clear_flag(numeric_keypad_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(numeric_keypad_overlay);
+}
+
+bool apply_numeric_datetime_value()
+{
+    const uint8_t required_length = numeric_input_target == NUMERIC_INPUT_DATE ? 8 : 4;
+    if (numeric_input_length != required_length) return false;
+
+    const int value = atoi(numeric_input_buffer);
+    time_t now = time(nullptr);
+    struct tm requested = {};
+    localtime_r(&now, &requested);
+    int requested_year = requested.tm_year + 1900;
+    int requested_month = requested.tm_mon + 1;
+    int requested_day = requested.tm_mday;
+    int requested_hour = requested.tm_hour;
+    int requested_minute = requested.tm_min;
+    if (numeric_input_target == NUMERIC_INPUT_DATE) {
+        requested_year = value / 10000;
+        requested_month = (value / 100) % 100;
+        requested_day = value % 100;
+        if (requested_year < 2024 || requested_year > 2099 || requested_month < 1 || requested_month > 12 ||
+            requested_day < 1 || requested_day > 31) return false;
+        requested.tm_year = requested_year - 1900;
+        requested.tm_mon = requested_month - 1;
+        requested.tm_mday = requested_day;
+    } else {
+        requested_hour = value / 100;
+        requested_minute = value % 100;
+        if (requested_hour > 23 || requested_minute > 59) return false;
+        requested.tm_hour = requested_hour;
+        requested.tm_min = requested_minute;
+    }
+    requested.tm_sec = 0;
+    requested.tm_isdst = -1;
+    const time_t epoch = mktime(&requested);
+    struct tm normalized = {};
+    localtime_r(&epoch, &normalized);
+    if (epoch == static_cast<time_t>(-1) || normalized.tm_year + 1900 != requested_year ||
+        normalized.tm_mon + 1 != requested_month || normalized.tm_mday != requested_day ||
+        normalized.tm_hour != requested_hour || normalized.tm_min != requested_minute) return false;
+
+    struct timeval tv = {.tv_sec = epoch, .tv_usec = 0};
+    settimeofday(&tv, nullptr);
+    settings.ntp_enabled = false;
+    if (ntp_switch != nullptr) lv_obj_remove_state(ntp_switch, LV_STATE_CHECKED);
+    save_settings();
+    time_synchronized = true;
+    return true;
+}
+
+void numeric_keypad_button_cb(lv_event_t *event)
 {
     const intptr_t command = reinterpret_cast<intptr_t>(lv_event_get_user_data(event));
-    lv_obj_t *spinbox = abs(command) == 1 ? manual_date_spinbox : manual_time_spinbox;
-    if (command > 0) lv_spinbox_increment(spinbox);
-    else lv_spinbox_decrement(spinbox);
+    if (command >= 0 && command <= 9) {
+        if (numeric_input_replace_on_digit) {
+            numeric_input_length = 0;
+            numeric_input_buffer[0] = '\0';
+            numeric_input_replace_on_digit = false;
+        }
+        const uint8_t max_length = numeric_input_target == NUMERIC_INPUT_DATE ? 8 : 4;
+        if (numeric_input_length < max_length) {
+            numeric_input_buffer[numeric_input_length++] = static_cast<char>('0' + command);
+            numeric_input_buffer[numeric_input_length] = '\0';
+        }
+        refresh_numeric_keypad_value();
+        return;
+    }
+    if (command == -1) {
+        numeric_input_replace_on_digit = false;
+        if (numeric_input_length > 0) numeric_input_buffer[--numeric_input_length] = '\0';
+        refresh_numeric_keypad_value();
+        return;
+    }
+    if (command == -2) {
+        if (!apply_numeric_datetime_value()) {
+            lv_obj_set_style_text_color(numeric_keypad_value, lv_color_hex(0xFF6B6B), 0);
+            return;
+        }
+        lv_obj_set_style_text_color(numeric_keypad_value, lv_color_white(), 0);
+        hide_numeric_keypad();
+        refresh_manual_datetime_labels();
+        waveshare_system_post_notification(-1, "Date et heure", "Reglage manuel applique");
+    }
 }
 
 void battery_capacity_cb(lv_event_t *event)
@@ -1072,6 +1194,24 @@ void show_control_center_page(uint8_t page)
     }
 }
 
+void show_settings_page(uint8_t page)
+{
+    settings_page_index = page == 1 ? 1 : 0;
+    if (settings_general_page != nullptr) {
+        lv_obj_set_flag(settings_general_page, LV_OBJ_FLAG_HIDDEN, settings_page_index != 0);
+    }
+    if (settings_battery_audio_page != nullptr) {
+        lv_obj_set_flag(settings_battery_audio_page, LV_OBJ_FLAG_HIDDEN, settings_page_index != 1);
+    }
+    for (uint8_t i = 0; i < 2; i++) {
+        lv_obj_t *dot = i == 0 ? settings_general_dot : settings_battery_audio_dot;
+        if (dot == nullptr) continue;
+        const bool selected = i == settings_page_index;
+        lv_obj_set_size(dot, selected ? 12 : 8, selected ? 12 : 8);
+        lv_obj_set_style_bg_opa(dot, selected ? LV_OPA_COVER : LV_OPA_40, 0);
+    }
+}
+
 void create_notification_chrome()
 {
     ESP_Brookesia_StatusBar *status_bar = phone != nullptr ? phone->getHome().getStatusBar() : nullptr;
@@ -1145,6 +1285,67 @@ void create_notification_chrome()
     lv_label_set_long_mode(notification_banner_message, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_color(notification_banner_message, lv_color_hex(0xC6D5E0), 0);
     lv_obj_add_flag(notification_banner, LV_OBJ_FLAG_HIDDEN);
+}
+
+void create_numeric_keypad()
+{
+    numeric_keypad_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(numeric_keypad_overlay, 480, 480);
+    lv_obj_set_pos(numeric_keypad_overlay, 0, 0);
+    lv_obj_set_style_bg_color(numeric_keypad_overlay, lv_color_hex(0x10171D), 0);
+    lv_obj_set_style_bg_opa(numeric_keypad_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(numeric_keypad_overlay, 0, 0);
+    lv_obj_set_style_pad_all(numeric_keypad_overlay, 18, 0);
+    lv_obj_set_flex_flow(numeric_keypad_overlay, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(numeric_keypad_overlay, 12, 0);
+
+    lv_obj_t *header = lv_obj_create(numeric_keypad_overlay);
+    lv_obj_set_size(header, LV_PCT(100), 44);
+    lv_obj_set_style_bg_opa(header, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(header, 0, 0);
+    lv_obj_set_style_pad_all(header, 0, 0);
+    lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(header, 12, 0);
+    lv_obj_t *back = add_button(header, LV_SYMBOL_LEFT, [](lv_event_t *) { hide_numeric_keypad(); }, nullptr);
+    lv_obj_set_size(back, 48, 42);
+    numeric_keypad_title = lv_label_create(header);
+    lv_obj_set_style_text_font(numeric_keypad_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(numeric_keypad_title, lv_color_hex(0xE6EDF3), 0);
+
+    lv_obj_t *value_box = lv_obj_create(numeric_keypad_overlay);
+    lv_obj_set_size(value_box, LV_PCT(100), 62);
+    lv_obj_set_style_radius(value_box, 6, 0);
+    lv_obj_set_style_bg_color(value_box, lv_color_hex(0x182128), 0);
+    lv_obj_set_style_border_color(value_box, lv_color_hex(0x4E718A), 0);
+    lv_obj_set_style_border_width(value_box, 1, 0);
+    numeric_keypad_value = lv_label_create(value_box);
+    lv_obj_set_style_text_font(numeric_keypad_value, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(numeric_keypad_value, lv_color_white(), 0);
+    lv_obj_center(numeric_keypad_value);
+
+    lv_obj_t *grid = lv_obj_create(numeric_keypad_overlay);
+    lv_obj_set_width(grid, LV_PCT(100));
+    lv_obj_set_flex_grow(grid, 1);
+    lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(grid, 0, 0);
+    lv_obj_set_style_pad_all(grid, 0, 0);
+    static int32_t columns[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static int32_t rows[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    lv_obj_set_grid_dsc_array(grid, columns, rows);
+    lv_obj_set_style_pad_gap(grid, 10, 0);
+
+    const char *keys[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", LV_SYMBOL_BACKSPACE, "0", "Valider"};
+    const intptr_t commands[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, -1, 0, -2};
+    for (uint8_t i = 0; i < 12; i++) {
+        lv_obj_t *button = add_button(grid, keys[i], numeric_keypad_button_cb, nullptr);
+        lv_obj_set_grid_cell(button, LV_GRID_ALIGN_STRETCH, i % 3, 1, LV_GRID_ALIGN_STRETCH, i / 3, 1);
+        lv_obj_set_style_text_font(button, i == 11 ? &lv_font_montserrat_16 : &lv_font_montserrat_24, 0);
+        lv_obj_remove_event_cb(button, numeric_keypad_button_cb);
+        lv_obj_add_event_cb(button, numeric_keypad_button_cb, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(commands[i]));
+    }
+    lv_obj_add_flag(numeric_keypad_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
 void create_control_center()
@@ -1253,8 +1454,8 @@ void create_control_center()
     lv_obj_set_style_border_width(settings_page, 0, 0);
     lv_obj_set_style_pad_all(settings_page, 0, 0);
     lv_obj_set_flex_flow(settings_page, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(settings_page, 8, 0);
-    lv_obj_set_scroll_dir(settings_page, LV_DIR_VER);
+    lv_obj_set_style_pad_row(settings_page, 10, 0);
+    lv_obj_remove_flag(settings_page, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_text_color(settings_page, lv_color_hex(0xE6EDF3), 0);
     lv_obj_add_flag(settings_page, LV_OBJ_FLAG_HIDDEN);
 
@@ -1273,64 +1474,62 @@ void create_control_center()
     lv_obj_set_style_text_font(settings_title, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(settings_title, lv_color_hex(0xE6EDF3), 0);
 
-    lv_obj_t *screen_row = add_settings_row(settings_page, "Veille ecran");
+    settings_general_page = lv_obj_create(settings_page);
+    lv_obj_set_width(settings_general_page, LV_PCT(100));
+    lv_obj_set_flex_grow(settings_general_page, 1);
+    lv_obj_set_style_bg_opa(settings_general_page, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(settings_general_page, 0, 0);
+    lv_obj_set_style_pad_all(settings_general_page, 0, 0);
+    lv_obj_set_flex_flow(settings_general_page, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(settings_general_page, 12, 0);
+    lv_obj_remove_flag(settings_general_page, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *screen_row = add_settings_row(settings_general_page, "Veille ecran");
     screen_timeout_dropdown = lv_dropdown_create(screen_row);
     lv_dropdown_set_options(screen_timeout_dropdown, "30 s\n1 min\n2 min\n5 min\n10 min");
     lv_obj_set_width(screen_timeout_dropdown, 120);
     style_settings_dropdown(screen_timeout_dropdown);
     lv_obj_add_event_cb(screen_timeout_dropdown, screen_timeout_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_t *never_row = add_settings_row(settings_page, "Ecran toujours actif");
+    lv_obj_t *never_row = add_settings_row(settings_general_page, "Ecran toujours actif");
     screen_never_switch = lv_switch_create(never_row);
     lv_obj_add_event_cb(screen_never_switch, screen_never_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *tz_row = add_settings_row(settings_page, "Fuseau horaire");
+    lv_obj_t *tz_row = add_settings_row(settings_general_page, "Fuseau horaire");
     timezone_dropdown = lv_dropdown_create(tz_row);
     lv_dropdown_set_options(timezone_dropdown, "Europe/Paris\nUTC\nEurope/London\nAmerica/New_York\nAsia/Tokyo");
     lv_obj_set_width(timezone_dropdown, 190);
     style_settings_dropdown(timezone_dropdown);
     lv_obj_add_event_cb(timezone_dropdown, timezone_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_t *ntp_row = add_settings_row(settings_page, "Mise a l'heure Wi-Fi");
+    lv_obj_t *ntp_row = add_settings_row(settings_general_page, "Mise a l'heure Wi-Fi");
     ntp_switch = lv_switch_create(ntp_row);
     lv_obj_add_event_cb(ntp_switch, ntp_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *datetime_row = add_settings_row(settings_page, "Date / heure manuelle");
-    lv_obj_set_height(datetime_row, 90);
-    lv_obj_set_flex_flow(datetime_row, LV_FLEX_FLOW_ROW_WRAP);
-    time_t now = time(nullptr);
-    struct tm local = {};
-    localtime_r(&now, &local);
-    manual_date_spinbox = lv_spinbox_create(datetime_row);
-    lv_spinbox_set_range(manual_date_spinbox, 20240101, 20991231);
-    lv_spinbox_set_digit_format(manual_date_spinbox, 8, 0);
-    lv_spinbox_set_value(manual_date_spinbox, (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday);
-    lv_obj_set_width(manual_date_spinbox, 118);
-    style_settings_control(manual_date_spinbox);
-    lv_obj_t *date_minus = add_button(datetime_row, LV_SYMBOL_MINUS, spinbox_step_cb, nullptr);
-    lv_obj_set_size(date_minus, 38, 38);
-    lv_obj_remove_event_cb(date_minus, spinbox_step_cb);
-    lv_obj_add_event_cb(date_minus, spinbox_step_cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(-1));
-    lv_obj_t *date_plus = add_button(datetime_row, LV_SYMBOL_PLUS, spinbox_step_cb, nullptr);
-    lv_obj_set_size(date_plus, 38, 38);
-    lv_obj_remove_event_cb(date_plus, spinbox_step_cb);
-    lv_obj_add_event_cb(date_plus, spinbox_step_cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(1));
-    manual_time_spinbox = lv_spinbox_create(datetime_row);
-    lv_spinbox_set_range(manual_time_spinbox, 0, 2359);
-    lv_spinbox_set_digit_format(manual_time_spinbox, 4, 0);
-    lv_spinbox_set_value(manual_time_spinbox, local.tm_hour * 100 + local.tm_min);
-    lv_obj_set_width(manual_time_spinbox, 78);
-    style_settings_control(manual_time_spinbox);
-    lv_obj_t *time_minus = add_button(datetime_row, LV_SYMBOL_MINUS, spinbox_step_cb, nullptr);
-    lv_obj_set_size(time_minus, 38, 38);
-    lv_obj_remove_event_cb(time_minus, spinbox_step_cb);
-    lv_obj_add_event_cb(time_minus, spinbox_step_cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(-2));
-    lv_obj_t *time_plus = add_button(datetime_row, LV_SYMBOL_PLUS, spinbox_step_cb, nullptr);
-    lv_obj_set_size(time_plus, 38, 38);
-    lv_obj_remove_event_cb(time_plus, spinbox_step_cb);
-    lv_obj_add_event_cb(time_plus, spinbox_step_cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(2));
-    lv_obj_t *apply_datetime = add_button(datetime_row, LV_SYMBOL_OK, manual_datetime_apply_cb, nullptr);
-    lv_obj_set_size(apply_datetime, 54, 42);
+    lv_obj_t *datetime_row = add_settings_row(settings_general_page, "Date / heure");
+    lv_obj_set_height(datetime_row, 60);
+    lv_obj_t *date_button = add_button(datetime_row, "", show_numeric_keypad_cb, &manual_date_button_label);
+    lv_obj_set_size(date_button, 128, 44);
+    lv_obj_remove_event_cb(date_button, show_numeric_keypad_cb);
+    lv_obj_add_event_cb(date_button, show_numeric_keypad_cb, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(NUMERIC_INPUT_DATE));
+    lv_obj_t *time_button = add_button(datetime_row, "", show_numeric_keypad_cb, &manual_time_button_label);
+    lv_obj_set_size(time_button, 86, 44);
+    lv_obj_remove_event_cb(time_button, show_numeric_keypad_cb);
+    lv_obj_add_event_cb(time_button, show_numeric_keypad_cb, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(NUMERIC_INPUT_TIME));
+    refresh_manual_datetime_labels();
 
-    lv_obj_t *capacity_row = add_settings_row(settings_page, "Capacite batterie");
+    settings_battery_audio_page = lv_obj_create(settings_page);
+    lv_obj_set_width(settings_battery_audio_page, LV_PCT(100));
+    lv_obj_set_flex_grow(settings_battery_audio_page, 1);
+    lv_obj_set_style_bg_opa(settings_battery_audio_page, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(settings_battery_audio_page, 0, 0);
+    lv_obj_set_style_pad_all(settings_battery_audio_page, 0, 0);
+    lv_obj_set_flex_flow(settings_battery_audio_page, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(settings_battery_audio_page, 12, 0);
+    lv_obj_remove_flag(settings_battery_audio_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(settings_battery_audio_page, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *capacity_row = add_settings_row(settings_battery_audio_page, "Capacite batterie");
     battery_capacity_dropdown = lv_dropdown_create(capacity_row);
     lv_dropdown_set_options(battery_capacity_dropdown, "500 mAh\n750 mAh\n1000 mAh\n1500 mAh\n2000 mAh");
     lv_obj_set_width(battery_capacity_dropdown, 130);
@@ -1338,31 +1537,31 @@ void create_control_center()
     const uint16_t capacity = settings.battery.capacity_mah;
     lv_dropdown_set_selected(battery_capacity_dropdown, capacity <= 500 ? 0 : capacity <= 750 ? 1 : capacity <= 1000 ? 2 : capacity <= 1500 ? 3 : 4);
     lv_obj_add_event_cb(battery_capacity_dropdown, battery_capacity_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_t *current_row = add_settings_row(settings_page, "Courant de charge");
+    lv_obj_t *current_row = add_settings_row(settings_battery_audio_page, "Courant de charge");
     battery_current_dropdown = lv_dropdown_create(current_row);
     lv_dropdown_set_options(battery_current_dropdown, "100 mA\n200 mA\n300 mA");
     lv_obj_set_width(battery_current_dropdown, 120);
     style_settings_dropdown(battery_current_dropdown);
     lv_dropdown_set_selected(battery_current_dropdown, settings.battery.charge_current <= 4 ? 0 : settings.battery.charge_current <= 8 ? 1 : 2);
     lv_obj_add_event_cb(battery_current_dropdown, battery_current_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_t *care_row = add_settings_row(settings_page, "Preserver la batterie (4,1 V)");
+    lv_obj_t *care_row = add_settings_row(settings_battery_audio_page, "Preserver la batterie (4,1 V)");
     battery_care_switch = lv_switch_create(care_row);
     lv_obj_add_event_cb(battery_care_switch, battery_care_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *mic_row = add_settings_row(settings_page, "Micros");
+    lv_obj_t *mic_row = add_settings_row(settings_battery_audio_page, "Micros");
     microphone_switch = lv_switch_create(mic_row);
     lv_obj_add_event_cb(microphone_switch, microphone_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    microphone_gain_label = lv_label_create(settings_page);
+    microphone_gain_label = lv_label_create(settings_battery_audio_page);
     lv_label_set_text_fmt(microphone_gain_label, "Gain micros: %s dB", MICROPHONE_GAIN_NAMES[settings.microphone_gain]);
-    microphone_gain_slider = lv_slider_create(settings_page);
+    microphone_gain_slider = lv_slider_create(settings_battery_audio_page);
     lv_obj_set_width(microphone_gain_slider, LV_PCT(100));
     lv_slider_set_range(microphone_gain_slider, 0, 14);
     lv_obj_add_event_cb(microphone_gain_slider, microphone_gain_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    noise_reduction_label = lv_label_create(settings_page);
+    noise_reduction_label = lv_label_create(settings_battery_audio_page);
     lv_label_set_text(noise_reduction_label, "AEC + reduction de bruit active");
-    output_volume_label = lv_label_create(settings_page);
+    output_volume_label = lv_label_create(settings_battery_audio_page);
     lv_label_set_text_fmt(output_volume_label, "Volume: %u%%", settings.output_volume);
-    output_volume_slider = lv_slider_create(settings_page);
+    output_volume_slider = lv_slider_create(settings_battery_audio_page);
     lv_obj_set_width(output_volume_slider, LV_PCT(100));
     lv_slider_set_range(output_volume_slider, 0, 100);
     lv_obj_add_event_cb(output_volume_slider, output_volume_cb, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1370,6 +1569,24 @@ void create_control_center()
     for (lv_obj_t *label : {microphone_gain_label, noise_reduction_label, output_volume_label}) {
         lv_obj_set_style_text_color(label, lv_color_hex(0xE6EDF3), 0);
     }
+
+    settings_page_indicator = lv_obj_create(settings_page);
+    lv_obj_set_size(settings_page_indicator, LV_PCT(100), 18);
+    lv_obj_set_style_bg_opa(settings_page_indicator, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(settings_page_indicator, 0, 0);
+    lv_obj_set_style_pad_all(settings_page_indicator, 0, 0);
+    lv_obj_set_style_pad_column(settings_page_indicator, 10, 0);
+    lv_obj_set_flex_flow(settings_page_indicator, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(settings_page_indicator, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    settings_general_dot = lv_obj_create(settings_page_indicator);
+    settings_battery_audio_dot = lv_obj_create(settings_page_indicator);
+    for (lv_obj_t *dot : {settings_general_dot, settings_battery_audio_dot}) {
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(dot, lv_color_white(), 0);
+        lv_obj_set_style_border_width(dot, 0, 0);
+        lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
+    }
+    show_settings_page(0);
 
     page_indicator = lv_obj_create(control_center);
     lv_obj_set_size(page_indicator, LV_PCT(100), 18);
@@ -1389,6 +1606,7 @@ void create_control_center()
     }
     show_control_center_page(0);
     create_notification_chrome();
+    create_numeric_keypad();
     notification_ui_dirty = true;
     refresh_control_center();
 }
@@ -1492,6 +1710,23 @@ void set_power_state(WaveshareSystemPowerState next)
     refresh_control_center();
 }
 
+bool point_is_inside(lv_obj_t *object, int32_t x, int32_t y)
+{
+    if (object == nullptr || lv_obj_has_flag(object, LV_OBJ_FLAG_HIDDEN)) return false;
+    lv_area_t area = {};
+    lv_obj_get_coords(object, &area);
+    return x >= area.x1 && x <= area.x2 && y >= area.y1 && y <= area.y2;
+}
+
+bool gesture_started_on_active_slider(int32_t x, int32_t y)
+{
+    if (control_center_page_index == 0) return point_is_inside(brightness_slider, x, y);
+    if (control_center_page_index == 2 && settings_page_index == 1) {
+        return point_is_inside(microphone_gain_slider, x, y) || point_is_inside(output_volume_slider, x, y);
+    }
+    return false;
+}
+
 void update_control_center_touch_gesture()
 {
     if (!control_center_visible) {
@@ -1513,18 +1748,19 @@ void update_control_center_touch_gesture()
     if (!control_center_touch_active) return;
     control_center_touch_active = false;
 
+    if (numeric_keypad_overlay != nullptr && !lv_obj_has_flag(numeric_keypad_overlay, LV_OBJ_FLAG_HIDDEN)) return;
+
     const int dx = point.x - control_center_touch_start.x;
     const int dy = point.y - control_center_touch_start.y;
     if (abs(dx) < 54 || abs(dx) <= abs(dy)) return;
 
-    lv_area_t slider_area = {};
-    lv_obj_get_coords(brightness_slider, &slider_area);
-    const bool started_on_brightness = control_center_page_index == 0 &&
-        control_center_touch_start.x >= slider_area.x1 && control_center_touch_start.x <= slider_area.x2 &&
-        control_center_touch_start.y >= slider_area.y1 && control_center_touch_start.y <= slider_area.y2;
-    if (started_on_brightness) return;
+    if (gesture_started_on_active_slider(control_center_touch_start.x, control_center_touch_start.y)) return;
 
-    if (control_center_page_index == 2) return;
+    if (control_center_page_index == 2) {
+        if (dx < 0 && settings_page_index == 0) show_settings_page(1);
+        if (dx > 0 && settings_page_index == 1) show_settings_page(0);
+        return;
+    }
     if (dx < 0 && control_center_page_index == 0) show_control_center_page(1);
     if (dx > 0 && control_center_page_index == 1) show_control_center_page(0);
 }
@@ -1548,21 +1784,23 @@ void gesture_cb(lv_event_t *event)
     }
     auto *info = static_cast<ESP_Brookesia_GestureInfo_t *>(lv_event_get_param(event));
     if (info != nullptr && control_center_visible) {
+        if (numeric_keypad_overlay != nullptr && !lv_obj_has_flag(numeric_keypad_overlay, LV_OBJ_FLAG_HIDDEN)) {
+            if (info->direction == ESP_BROOKESIA_GESTURE_DIR_UP) hide_numeric_keypad();
+            return;
+        }
         if (info->direction == ESP_BROOKESIA_GESTURE_DIR_UP) {
             waveshare_system_hide_control_center();
             return;
         }
-        lv_area_t slider_area = {};
-        lv_obj_get_coords(brightness_slider, &slider_area);
-        const bool started_on_brightness = control_center_page_index == 0 &&
-            info->start_x >= slider_area.x1 && info->start_x <= slider_area.x2 &&
-            info->start_y >= slider_area.y1 && info->start_y <= slider_area.y2;
-        if (!started_on_brightness && info->direction == ESP_BROOKESIA_GESTURE_DIR_LEFT) {
+        const bool started_on_slider = gesture_started_on_active_slider(info->start_x, info->start_y);
+        if (!started_on_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_LEFT) {
             if (control_center_page_index == 0) show_control_center_page(1);
+            else if (control_center_page_index == 2 && settings_page_index == 0) show_settings_page(1);
             return;
         }
-        if (!started_on_brightness && info->direction == ESP_BROOKESIA_GESTURE_DIR_RIGHT) {
+        if (!started_on_slider && info->direction == ESP_BROOKESIA_GESTURE_DIR_RIGHT) {
             if (control_center_page_index == 1) show_control_center_page(0);
+            else if (control_center_page_index == 2 && settings_page_index == 1) show_settings_page(0);
             return;
         }
     }
@@ -1802,6 +2040,7 @@ void waveshare_system_show_control_center(void)
 void waveshare_system_hide_control_center(void)
 {
     if (control_center == nullptr) return;
+    hide_numeric_keypad();
     if (control_center_page_index == 2) show_control_center_page(0);
     control_center_visible = false;
     if (phone != nullptr) phone->getManager().setSystemOverlayVisible(false);
